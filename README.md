@@ -17,17 +17,17 @@ Otwórz `http://localhost:3000`. Inne urządzenie w tej samej sieci może otworz
 
 - Zgłoszenie dostawy, parkingu lub odbioru; filtr czasu, długości postoju, gabarytu i zamknięcia zatoki.
 - Mapa OpenStreetMap obok listy wyników pokazuje trzy punkty scenariusza na rzeczywistej ulicy. Przycisk punktu startowego pyta o zgodę w aplikacji i ustawia **symulowaną pozycję na tym odcinku**; nie pobiera GPS.
-- Jeden przycisk `Pokaż demo ulicy` otwiera prowadzony pokaz trzech sytuacji: koniec postoju i zgłoszenie zajęcia, konflikt dwóch dostaw z parkingiem oraz odbiory po wydarzeniu. Jeden przycisk `Dalej` prowadzi do kolejnej sytuacji, a zakończenie przywraca czysty scenariusz. Sceny zapisują demonstracyjne dane w tym samym lokalnym stanie, więc panel miasta, kierowca i makieta znaku reagują na siebie.
+- Scenariusz można przejść samodzielnie: zgłosić potrzebę postoju, sprawdzić wynik, dodać wydarzenie i zatwierdzić przyszły plan w panelu miasta. Widoki kierowcy i makiety znaku reagują na zmianę wspólnego stanu.
 - Brak obietnicy wolnego miejsca: przy braku pomiaru zajętość to `nieznana`.
 - Po potwierdzonym przyjeździe aplikacja zapisuje deklarowany czas postoju. Do jego końca zatoka jest traktowana jako prawdopodobnie zajęta, a przez kolejne 15 minut może pojawić się sygnał `może być wolne` z niską pewnością. Świeższe zgłoszenie zajęcia go zastępuje; samo wyszukanie nie wystarcza do oszacowania konkretnej zatoki.
 - Zapis niezaspokojonego popytu i odrzucanie zduplikowanych zgłoszeń.
 - Symulacja wariantu bez zmian i przyszłych zmian funkcji; wynik uwzględnia obsłużone i nieobsłużone zgłoszenia oraz koszt zmiany.
 - Wydarzenie demonstracyjne jako sygnał prognozy; samo nie wystarcza do rekomendacji odbioru.
 - Akceptacja przyszłego planu i odświeżenie widoków na drugim urządzeniu przez odpytywanie co 1,5 s.
-- Zamknięcie zatoki, świeże zgłoszenie zajęcia, przesunięcie czasu scenariusza i reset.
+- Proste zamknięcie lub przywrócenie zatoki w panelu miasta; ta operacja nie zmienia zgłoszeń zajętości. Przycisk przywrócenia początku demo resetuje stan.
 - Użytkownik może zgłosić przyjazd, zastane zajęcie i odjazd blisko godziny przyjazdu. Zgłoszenia mają źródło i godzinę scenariusza, wygasają po 15 minutach; odjazd nie oznacza potwierdzonego wolnego miejsca.
 - Panel miasta zapisuje historię zatwierdzonych przyszłych okien, pokazuje pochodzenie sygnału wydarzenia i proponowany rytm przeglądu harmonogramu.
-- Pokaz można rozpocząć ponownie z pierwszego ekranu bez ręcznego resetu.
+- W panelu miasta można przywrócić początek demonstracji.
 
 ## Granice obecnego rdzenia
 

@@ -45,6 +45,17 @@ test('zamknięcie i świeże zgłoszenie zajęcia blokują wskazanie miejsca', (
   assert.equal(occupancyStatus(state.bays[0], state.now), 'unknown');
 });
 
+test('zamknięcie zatoki nie zmienia zgłoszeń zajętości', () => {
+  const occupied = mutate(initialState(), { type: 'bay', bayId: 'A', closed: false, occupancy: 'reported_occupied' });
+  const closed = mutate(occupied, { type: 'bay_closure', bayId: 'A', closed: true });
+  assert.equal(closed.bays[0].closed, true);
+  assert.equal(closed.bays[0].occupancy, 'reported_occupied');
+  assert.deepEqual(closed.observations, occupied.observations);
+  const reopened = mutate(closed, { type: 'bay_closure', bayId: 'A', closed: false });
+  assert.equal(reopened.bays[0].closed, false);
+  assert.deepEqual(reopened.observations, occupied.observations);
+});
+
 test('ponowne wyszukanie pokazuje wynik bez zawyżania popytu', () => {
   const action = { type: 'request', mode: 'delivery', destination: 'shops', arrival: 690, duration: 15, vehicle: 'van' };
   const state = mutate(initialState(), action);

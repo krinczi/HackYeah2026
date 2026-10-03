@@ -389,6 +389,11 @@ export function mutate(state: AppState, action: Record<string, unknown>): AppSta
     if (!state.events.some(event => event.id === id && event.status === 'planned')) throw new Error('Nie znaleziono aktywnego wydarzenia.');
     return { ...state, events: state.events.map(event => event.id === id ? { ...event, status: 'cancelled' as const, updatedAt: new Date().toISOString() } : event), revision: state.revision + 1 };
   }
+  if (action.type === 'bay_closure') {
+    const bayId = String(action.bayId);
+    if (!state.bays.some(bay => bay.id === bayId) || typeof action.closed !== 'boolean') throw new Error('Nieprawidłowy stan zatoki.');
+    return { ...state, bays: state.bays.map(bay => bay.id === bayId ? { ...bay, closed: action.closed as boolean } : bay), revision: state.revision + 1 };
+  }
   if (action.type === 'bay') {
     const bayId = String(action.bayId);
     const current = state.bays.find(b => b.id === bayId);
