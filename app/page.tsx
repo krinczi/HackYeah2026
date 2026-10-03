@@ -1,13 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { availabilityHint, DEST_LABEL, formatTime, MAX_DURATION, MODE_LABEL, modeAt, occupancyEvidence, occupancyStatus, rankBays, type Analysis, type AppState, type Bay, type Destination, type Mode, type Vehicle } from '@/lib/core';
+import { availabilityHint, DEST_LABEL, formatTime, MAX_DURATION, MODE_LABEL, modeAt, occupancyEvidence, occupancyStatus, rankBays, type Analysis, type AppState, type Bay, type DemoScene, type Destination, type Mode, type Vehicle } from '@/lib/core';
 import BayMap from './bay-map';
 
 type Payload = { state: AppState; analysis: Analysis };
 type Tab = 'driver' | 'city' | 'sign';
 type DriverStep = 'intent' | 'details' | 'results';
 type SearchInput = { mode: Mode; destination: Destination; arrival: number; duration: number; vehicle: Vehicle };
+const SCENES: { id: DemoScene; title: string; note: string }[] = [
+  { id: 'parking', title: 'Czy już wolne?', note: 'Kliknij „Miejsce zajęte” przy B — wynik od razu się zmieni.' },
+  { id: 'delivery', title: 'Dwie dostawy', note: 'Zatwierdź proponowaną zmianę A, potem obejrzyj znak.' },
+  { id: 'event', title: 'Po wydarzeniu', note: 'Zatwierdź C dla odbiorów po wydarzeniu.' },
+];
 
 function nextMode(bay: Bay, at: number) {
   return bay.slots.find(slot => slot.start > at);
@@ -88,6 +93,25 @@ export default function Home() {
     return keep ? [keep, ...changes] : changes;
   }, [analysis]);
 
+  async function openScene(scene: DemoScene) {
+    const result = await act({ type: 'scene', scene }, '');
+    if (!result) return;
+    setActiveBayId(null);
+    setActiveStopEnd(null);
+    setSelectedBayId(null);
+    if (scene === 'parking') {
+      const search: SearchInput = { mode: 'parking', destination: 'shops', arrival: result.state.now, duration: 30, vehicle: 'car' };
+      setInput(search);
+      setSubmitted(search);
+      setDriverStep('results');
+      setTab('driver');
+    } else {
+      setSubmitted(null);
+      setDriverStep('intent');
+      setTab('city');
+    }
+  }
+
   if (!state || !analysis) return <main className="loading">Ładowanie ulicy…</main>;
 
   return <main className="shell">
@@ -101,6 +125,11 @@ export default function Home() {
       <button className={tab !== 'driver' ? 'active' : ''} onClick={() => setTab('city')}>Dla miasta</button>
     </nav>
     {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Zamknij komunikat">×</button></div>}
+    <section className="demo-rail" aria-label="Scenariusze demonstracyjne">
+      <div className="demo-rail-intro"><span>WARSZAWA / ŚWIĘTOKRZYSKA</span><strong>Jedna ulica. Trzy historie.</strong><small>Marszałkowska – pl. Powstańców · <a href="https://zdm.waw.pl/wp-content/uploads/2018/04/Raport_koncowy_Swietokrzyska_dostawy.pdf" target="_blank" rel="noopener noreferrer">badanie ZDM 2018</a></small></div>
+      <div className="demo-rail-options">{SCENES.map((scene, index) => <button key={scene.id} type="button" className={state.scene === scene.id ? 'is-active' : ''} disabled={busy} onClick={() => void openScene(scene.id)}><span>0{index + 1}</span><b>{scene.title}</b></button>)}</div>
+      {state.scene && <p className="demo-rail-note">{SCENES.find(scene => scene.id === state.scene)?.note} Punkty A–C i ich zasady są modelem, nie aktualnym oznakowaniem.</p>}
+    </section>
 
     {tab === 'driver' && <>
       {driverStep === 'intent' && <section className="intro simple-intro"><p className="eyebrow">JEDNA ZATOKA. RÓŻNE POTRZEBY.</p><h1>Gdzie chcesz<br/><em>się zatrzymać?</em></h1><p className="lede">Wybierz powód postoju. W następnym kroku podasz godzinę i zobaczysz, co wolno.</p></section>}
@@ -150,7 +179,7 @@ export default function Home() {
     </>}
 
     {tab === 'city' && <div className="city-layout">
-      <section className="city-entry"><div><span className="eyebrow">PANEL MIASTA · PROTOTYP</span><h1>Ulica ma swój rytm.</h1><p>Sprawdź rekomendację dla przyszłego okna. To miasto wybiera plan.</p></div><div className="city-entry-actions"><button className="demo-launch" disabled={busy} onClick={async () => { if (await act({ type: 'demo' }, 'Przykład gotowy: dwie dostawy potrzebują miejsca.')) { setSubmitted(null); setActiveBayId(null); setDriverStep('intent'); } }}>Uruchom przykład</button><button className="back-link" onClick={() => setTab('sign')}>Zobacz widok zatoki</button></div></section>
+      <section className="city-entry"><div><span className="eyebrow">PANEL MIASTA · PROTOTYP</span><h1>Ulica ma swój rytm.</h1><p>Sprawdź rekomendację dla przyszłego okna. To miasto wybiera plan.</p></div><div className="city-entry-actions"><button className="back-link" onClick={() => setTab('sign')}>Zobacz widok zatoki</button></div></section>
       <section className="timeline-panel"><div className="section-heading compact"><span>ODCINEK / SCENARIUSZ</span><h2>Rytm ulicy</h2><p>Godzina scenariusza: <b>{formatTime(state.now)}</b>. Zatoki i odległości są demonstracyjne.</p></div>
         <div className="timeline-hours"><span></span>{[10, 11, 12, 13, 14, 15, 16, 17, 18].map(h => <span key={h}>{h}:00</span>)}</div>
         <div className="ribbon">{state.bays.map(bay => <BayRibbon key={bay.id} bay={bay} now={state.now} />)}</div>
@@ -179,7 +208,7 @@ export default function Home() {
       </details>
     </div>}
 
-    {tab === 'sign' && <section className="sign-layout"><button className="back-link sign-back" onClick={() => setTab('city')}>Panel miasta</button><div className="section-heading"><span>WIDOK ULICY / MAKIETA</span><h2>Jedna informacja na każdym ekranie.</h2><p>Cyfrowy podgląd funkcji zatoki. Nie jest zatwierdzonym oznakowaniem drogowym.</p></div><div className="sign-grid">{state.bays.map(bay => { const mode = modeAt(bay, state.now); const next = nextMode(bay, state.now); return <article key={bay.id} className="street-sign"><div className="sign-top"><span>TU WOLNO?</span><b>{bay.id}</b></div><div className={`sign-main ${bay.closed ? 'unknown' : mode ?? 'unknown'}`}><small>{bay.closed ? 'NIEDOSTĘPNA' : 'TERAZ'}</small><strong>{bay.closed ? 'WYŁĄCZONA' : mode ? MODE_LABEL[mode].toUpperCase() : 'BRAK PLANU'}</strong></div><div className="sign-bottom"><span>{next ? `OD ${formatTime(next.start)}` : 'DALEJ'}</span><b>{next ? MODE_LABEL[next.mode].toUpperCase() : 'BRAK ZMIANY'}</b></div><p>Zajętość: {occupancyStatus(bay, state.now) === 'unknown' ? 'nieznana' : 'zgłoszono zajęcie'} · zasady demonstracyjne</p><p className="sign-evidence">{occupancyEvidence(state, bay)}</p></article>; })}</div>{state.lastDecision && <p className="last-decision">Ostatnia decyzja: {state.lastDecision}</p>}<p className="fineprint">Plan w tym widoku pochodzi z demonstracyjnej decyzji operatora. Na prawdziwej ulicy musi odpowiadać zatwierdzonej organizacji ruchu i oznakowaniu.</p></section>}
+    {tab === 'sign' && <section className="sign-layout"><button className="back-link sign-back" onClick={() => setTab('city')}>Panel miasta</button><div className="section-heading"><span>WIDOK ULICY / MAKIETA</span><h2>Jedna informacja na każdym ekranie.</h2><p>Cyfrowy podgląd funkcji zatoki. Nie jest zatwierdzonym oznakowaniem drogowym.</p></div><div className="sign-grid">{state.bays.map(bay => { const mode = modeAt(bay, state.now); const next = nextMode(bay, state.now); return <article key={bay.id} className="street-sign"><div className="sign-top"><span>TU WOLNO?</span><b>{bay.id}</b></div><div className={`sign-main ${bay.closed ? 'unknown' : mode ?? 'unknown'}`}><small>{bay.closed ? 'NIEDOSTĘPNA' : 'TERAZ'}</small><strong>{bay.closed ? 'WYŁĄCZONA' : mode ? MODE_LABEL[mode].toUpperCase() : 'BRAK PLANU'}</strong></div><div className="sign-bottom"><span>{next ? `OD ${formatTime(next.start)}` : 'DALEJ'}</span><b>{next ? MODE_LABEL[next.mode].toUpperCase() : 'BRAK ZMIANY'}</b></div></article>; })}</div>{state.lastDecision && <p className="last-decision">Ostatnia decyzja: {state.lastDecision}</p>}<p className="fineprint">Plan w tym widoku pochodzi z demonstracyjnej decyzji operatora. Na prawdziwej ulicy musi odpowiadać zatwierdzonej organizacji ruchu i oznakowaniu.</p></section>}
 
     <footer><span>TuWolno? · prototyp konkursowy</span><span>Źródła i ograniczenia danych są jawne. Model zatok nie opisuje obecnego oznakowania Warszawy.</span></footer>
   </main>;

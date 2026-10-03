@@ -1,4 +1,5 @@
 export type Mode = 'delivery' | 'parking' | 'pickup';
+export type DemoScene = 'parking' | 'delivery' | 'event';
 export type Destination = 'shops' | 'food' | 'stop';
 export type Vehicle = 'car' | 'van';
 export type Slot = { start: number; end: number; mode: Mode };
@@ -51,6 +52,7 @@ export type PlanDecision = {
 export type AppState = {
   revision: number;
   now: number;
+  scene?: DemoScene | null;
   bays: Bay[];
   requests: StopRequest[];
   observations: Observation[];
@@ -92,6 +94,7 @@ export function initialState(): AppState {
   return {
     revision: 1,
     now: 600,
+    scene: null,
     bays: [
       { id: 'A', name: 'Zatoka A', distance: { shops: 40, food: 120, stop: 150 }, van: true, closed: false, occupancy: 'unknown', occupancyAt: null, slots: [{ start: 600, end: 660, mode: 'delivery' }, { start: 660, end: 1320, mode: 'parking' }] },
       { id: 'B', name: 'Zatoka B', distance: { shops: 80, food: 50, stop: 110 }, van: true, closed: false, occupancy: 'unknown', occupancyAt: null, slots: structuredClone(parking) },
@@ -138,10 +141,10 @@ export function availabilityHint(state: AppState, bay: Bay, at: number): Availab
   }
   if (latest.kind !== 'arrived' || latest.expectedEnd === undefined) return null;
   if (at < latest.expectedEnd) {
-    return { kind: 'expected_occupied', label: 'Przewidywany postój', detail: `Przyjazd zgłoszony o ${formatTime(latest.scenarioMinute)} · deklarowany koniec postoju ${formatTime(latest.expectedEnd)}.` };
+    return { kind: 'expected_occupied', label: 'Przewidywany postój', detail: `${latest.source === 'operator_demo' ? 'Przykładowy przyjazd' : 'Przyjazd zgłoszony'} o ${formatTime(latest.scenarioMinute)} · deklarowany koniec postoju ${formatTime(latest.expectedEnd)}.` };
   }
   if (at <= latest.expectedEnd + 15) {
-    return { kind: 'possible_free', label: 'Może być wolne', detail: `Deklarowany postój skończył się o ${formatTime(latest.expectedEnd)} · brak potwierdzenia odjazdu, niska pewność.` };
+    return { kind: 'possible_free', label: 'Może być wolne', detail: `${latest.source === 'operator_demo' ? 'Przykładowy' : 'Deklarowany'} postój skończył się o ${formatTime(latest.expectedEnd)} · brak potwierdzenia odjazdu, niska pewność.` };
   }
   return null;
 }
@@ -274,10 +277,25 @@ export function applyVariant(state: AppState, id: string): AppState {
 
 export function mutate(state: AppState, action: Record<string, unknown>): AppState {
   if (action.type === 'reset') return initialState();
-  if (action.type === 'demo') {
+  if (action.type === 'scene') {
+    const scene = String(action.scene) as DemoScene;
     const seed = initialState();
-    const extra: StopRequest = { id: 'demo-d2', mode: 'delivery', destination: 'shops', arrival: 690, duration: 15, vehicle: 'van', source: 'demo_seed', createdAt: 'scenariusz' };
-    return { ...seed, requests: [...seed.requests, extra], revision: state.revision + 1 };
+    if (scene === 'parking') {
+      const observation: Observation = { id: 'scene-parking-b', bayId: 'B', kind: 'arrived', source: 'operator_demo', scenarioMinute: 600, expectedEnd: 630, recordedAt: 'scenariusz' };
+      return { ...seed, scene, now: 630, bays: seed.bays.map(bay => bay.id === 'B' ? { ...bay, occupancy: 'reported_occupied' as const, occupancyAt: 600 } : bay), observations: [observation], revision: state.revision + 1 };
+    }
+    if (scene === 'delivery') {
+      const extra: StopRequest = { id: 'scene-delivery-2', mode: 'delivery', destination: 'shops', arrival: 690, duration: 15, vehicle: 'van', source: 'demo_seed', createdAt: 'scenariusz' };
+      return { ...seed, scene, requests: [...seed.requests, extra], revision: state.revision + 1 };
+    }
+    if (scene === 'event') {
+      const pickups: StopRequest[] = [690, 715, 740].map((arrival, index) => ({ id: `scene-pickup-${index}`, mode: 'pickup', destination: 'stop', arrival, duration: 10, vehicle: 'car', source: 'demo_seed', createdAt: 'scenariusz' }));
+      return { ...seed, scene, now: 630, requests: pickups, event: { ...seed.event, status: 'planned' }, revision: state.revision + 1 };
+    }
+    throw new Error('Nieznany scenariusz.');
+  }
+  if (action.type === 'demo') {
+    return mutate(state, { type: 'scene', scene: 'delivery' });
   }
   if (action.type === 'request') {
     const mode = action.mode as Mode;

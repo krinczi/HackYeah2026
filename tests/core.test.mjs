@@ -114,3 +114,22 @@ test('jedno kliknięcie przygotowuje powtarzalny scenariusz dla jury', () => {
   assert.equal(state.observations.length, 0);
   assert.equal(analyze(state).variants.some(variant => variant.id === 'C-delivery'), false);
 });
+
+test('scenariusz parkingu pokazuje niepewną wolną zatokę, którą można zgłosić jako zajętą', () => {
+  let state = mutate(initialState(), { type: 'scene', scene: 'parking' });
+  const search = { mode: 'parking', destination: 'shops', arrival: state.now, duration: 30, vehicle: 'car' };
+  assert.equal(state.scene, 'parking');
+  assert.equal(availabilityHint(state, state.bays[1], state.now)?.kind, 'possible_free');
+  assert.equal(rankBays(state, search)[0].bay.id, 'B');
+  state = mutate(state, { type: 'observation', bayId: 'B', kind: 'occupied', arrival: state.now });
+  assert.equal(rankBays(state, search).some(match => match.bay.id === 'B'), false);
+  assert.equal(rankBays(state, search)[0].bay.id, 'C');
+});
+
+test('scenariusze dostaw i wydarzenia prowadzą do różnych decyzji miasta', () => {
+  const delivery = mutate(initialState(), { type: 'scene', scene: 'delivery' });
+  const event = mutate(initialState(), { type: 'scene', scene: 'event' });
+  assert.equal(analyze(delivery).recommendedId, 'A-delivery');
+  assert.equal(analyze(event).recommendedId, 'C-pickup');
+  assert.equal(event.event.source, 'demo');
+});

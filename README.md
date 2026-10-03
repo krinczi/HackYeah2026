@@ -1,6 +1,6 @@
 # TuWolno? — działający rdzeń demo
 
-Responsywna aplikacja Next.js: widok użytkownika, panel miasta i cyfrowy podgląd zatoki. Scenariusz obejmuje trzy **modelowe** zatoki, a nie zweryfikowane aktualne oznakowanie w Warszawie.
+Responsywna aplikacja Next.js: widok użytkownika, panel miasta i cyfrowy podgląd zatoki. Pokaz osadzono na prawdziwym odcinku ul. Świętokrzyskiej między Marszałkowską a pl. Powstańców Warszawy, ale punkty A–C, ich harmonogramy i zgłoszenia są **modelowe**, a nie aktualnym oznakowaniem Warszawy.
 
 Pierwszy ekran prowadzi przez trzy proste kroki: wybór celu postoju → godzina i miejsce → wynik. Panel miasta jest osobnym widokiem; porównania i scenariusze są rozwijane dopiero na żądanie.
 
@@ -16,7 +16,8 @@ Otwórz `http://localhost:3000`. Inne urządzenie w tej samej sieci może otworz
 ## Co działa
 
 - Zgłoszenie dostawy, parkingu lub odbioru; filtr czasu, długości postoju, gabarytu i zamknięcia zatoki.
-- Mapa OpenStreetMap obok listy wyników pokazuje trzy punkty scenariusza. Po kliknięciu można dodać przybliżoną lokalizację użytkownika; aplikacja nie zapisuje jej na serwerze.
+- Mapa OpenStreetMap obok listy wyników pokazuje trzy punkty scenariusza na rzeczywistej ulicy. Przycisk punktu startowego pyta o zgodę w aplikacji i ustawia **symulowaną pozycję na tym odcinku**; nie pobiera GPS.
+- Pasek pokazu przełącza trzy odtwarzalne sytuacje: koniec postoju i zgłoszenie zajęcia, konflikt dwóch dostaw z parkingiem oraz odbiory po wydarzeniu. Sceny zapisują demonstracyjne dane w tym samym lokalnym stanie, więc panel miasta, kierowca i makieta znaku reagują na siebie.
 - Brak obietnicy wolnego miejsca: przy braku pomiaru zajętość to `nieznana`.
 - Po potwierdzonym przyjeździe aplikacja zapisuje deklarowany czas postoju. Do jego końca zatoka jest traktowana jako prawdopodobnie zajęta, a przez kolejne 15 minut może pojawić się sygnał `może być wolne` z niską pewnością. Świeższe zgłoszenie zajęcia go zastępuje; samo wyszukanie nie wystarcza do oszacowania konkretnej zatoki.
 - Zapis niezaspokojonego popytu i odrzucanie zduplikowanych zgłoszeń.
@@ -26,7 +27,7 @@ Otwórz `http://localhost:3000`. Inne urządzenie w tej samej sieci może otworz
 - Zamknięcie zatoki, świeże zgłoszenie zajęcia, przesunięcie czasu scenariusza i reset.
 - Użytkownik może zgłosić przyjazd, zastane zajęcie i odjazd blisko godziny przyjazdu. Zgłoszenia mają źródło i godzinę scenariusza, wygasają po 15 minutach; odjazd nie oznacza potwierdzonego wolnego miejsca.
 - Panel miasta zapisuje historię zatwierdzonych przyszłych okien, pokazuje pochodzenie sygnału wydarzenia i proponowany rytm przeglądu harmonogramu.
-- Przycisk `Uruchom przykład` przygotowuje powtarzalny konflikt dostaw i otwiera panel miasta do pokazu dla jury.
+- Sceny można uruchamiać wielokrotnie z dowolnego widoku, aby jury mogło porównać przypadki bez ręcznego resetu.
 
 ## Granice obecnego rdzenia
 
@@ -35,7 +36,7 @@ Otwórz `http://localhost:3000`. Inne urządzenie w tej samej sieci może otworz
 - Zgłoszenia zajętości w demo są deklaracjami użytkownika lub operatora, nie pomiarami fizycznymi. Rytm tygodniowego przeglądu w pilotażu jest propozycją produktu, nie automatyczną zmianą prawa ani faktem o Warszawie.
 - Dane utrwala lokalny plik. Do publicznego wdrożenia z wieloma instancjami potrzebna będzie współdzielona baza (planowane Supabase), autoryzacja operatora i osobne sesje jury.
 - Przybliżone odległości są częścią scenariusza, nie pomiarem tras pieszych.
-- Punkty A–C na mapie są orientacyjną wizualizacją modelu w rejonie ul. Świętokrzyskiej. Nie wskazują zweryfikowanych zatok ani aktualnego oznakowania; do rzeczywistego wdrożenia potrzebne są współrzędne potwierdzone przez zarządcę drogi. Podkład mapowy wymaga internetu.
+- Punkty A–C są orientacyjną wizualizacją modelu na ul. Świętokrzyskiej. Nie wskazują zweryfikowanych zatok ani aktualnego oznakowania; do rzeczywistego wdrożenia potrzebne są współrzędne i zasady potwierdzone przez zarządcę drogi. Podkład mapowy wymaga internetu.
 
 Źródło problemu miejskiego: [badanie ZDM Warszawa z 2018 r.](https://zdm.waw.pl/wp-content/uploads/2018/04/Raport_koncowy_Swietokrzyska_dostawy.pdf). Nie jest ono źródłem bieżącej zajętości.
 ## Folder JetBrains

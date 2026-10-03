@@ -13,13 +13,13 @@ type Props = {
   onSelectBay: (id: string) => void;
 };
 
-// Illustrative points near Świętokrzyska / Marszałkowska, not surveyed bay coordinates.
-// The street context is supported by historical public research; A–C remain demo data.
+// Points placed along the real street section for storytelling, not surveyed bays.
 const DEMO_POINTS: Record<string, Point> = {
-  A: [52.23534, 21.00725],
-  B: [52.23547, 21.00835],
-  C: [52.23561, 21.00945],
+  A: [52.235530, 21.010054],
+  B: [52.235833, 21.011530],
+  C: [52.236020, 21.012790],
 };
+const DEMO_START: Point = [52.235700, 21.010870];
 
 function bayIcon(L: typeof Leaflet, bay: Bay, eligible: boolean, selected: boolean, possibleFree: boolean, arrival: number) {
   const marker = document.createElement('span');
@@ -37,8 +37,7 @@ export default function BayMap({ state, matches, arrival, selectedBayId, onSelec
   const [mapError, setMapError] = useState(false);
   const [tilesError, setTilesError] = useState(false);
   const [location, setLocation] = useState<Point | null>(null);
-  const [accuracy, setAccuracy] = useState<number | null>(null);
-  const [locating, setLocating] = useState(false);
+  const [showLocationPrompt, setShowLocationPrompt] = useState(false);
   const [locationMessage, setLocationMessage] = useState('');
 
   useEffect(() => {
@@ -51,7 +50,7 @@ export default function BayMap({ state, matches, arrival, selectedBayId, onSelec
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>',
       }).on('tileerror', () => setTilesError(true)).addTo(map);
       L.control.zoom({ position: 'bottomright' }).addTo(map);
-      map.fitBounds(L.latLngBounds(Object.values(DEMO_POINTS)).pad(0.55), { maxZoom: 17, animate: false });
+      map.fitBounds(L.latLngBounds(Object.values(DEMO_POINTS)).pad(0.45), { maxZoom: 18, animate: false });
       leafletRef.current = L;
       mapRef.current = map;
       setReady(true);
@@ -101,54 +100,37 @@ export default function BayMap({ state, matches, arrival, selectedBayId, onSelec
     const map = mapRef.current;
     if (!ready || !L || !map || !location) return;
     const layer = L.layerGroup().addTo(map);
-    if (accuracy) L.circle(location, { radius: accuracy, color: '#203126', weight: 1, fillColor: '#438770', fillOpacity: 0.08 }).addTo(layer);
     const pin = document.createElement('span');
     pin.className = 'map-user-pin';
-    pin.textContent = 'TY';
+    pin.textContent = 'START';
     L.marker(location, {
-      icon: L.divIcon({ className: 'map-pin-wrapper', html: pin, iconSize: [44, 44], iconAnchor: [22, 22] }),
-      title: 'Twoja przybliżona lokalizacja',
+      icon: L.divIcon({ className: 'map-pin-wrapper', html: pin, iconSize: [52, 44], iconAnchor: [26, 22] }),
+      title: 'Punkt startowy scenariusza · pozycja symulowana',
       zIndexOffset: 2000,
     }).addTo(layer);
-    map.fitBounds(L.latLngBounds([...Object.values(DEMO_POINTS), location]).pad(0.28), { maxZoom: 16 });
+    map.fitBounds(L.latLngBounds([...Object.values(DEMO_POINTS), location]).pad(0.35), { maxZoom: 18 });
     return () => { layer.remove(); };
-  }, [ready, location, accuracy]);
+  }, [ready, location]);
 
   function findMe() {
-    if (!navigator.geolocation) {
-      setLocationMessage('Ta przeglądarka nie udostępnia lokalizacji.');
-      return;
-    }
-    setLocating(true);
-    setLocationMessage('');
-    navigator.geolocation.getCurrentPosition(
-      position => {
-        setLocation([position.coords.latitude, position.coords.longitude]);
-        setAccuracy(position.coords.accuracy);
-        setLocating(false);
-      },
-      error => {
-        setLocating(false);
-        setLocationMessage(error.code === 1 ? 'Lokalizacja nie została udostępniona.' : 'Nie udało się ustalić lokalizacji. Spróbuj ponownie.');
-      },
-      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 },
-    );
+    setShowLocationPrompt(true);
   }
 
   function focusBays() {
     const L = leafletRef.current;
     const map = mapRef.current;
-    if (L && map) map.fitBounds(L.latLngBounds(Object.values(DEMO_POINTS)).pad(0.55), { maxZoom: 17 });
+    if (L && map) map.fitBounds(L.latLngBounds(Object.values(DEMO_POINTS)).pad(0.45), { maxZoom: 18 });
   }
 
   return <section className="bay-map-card" id="mapa-zatok" aria-label="Mapa zatok">
-    <div className="bay-map-heading"><div><span>WARSZAWA / SCENARIUSZ</span><h3>Zatoki na mapie</h3></div><span className="bay-map-count">{matches.length} / {state.bays.length} pasuje</span></div>
-    <div className="bay-map-actions"><button type="button" onClick={findMe} disabled={locating}>{locating ? 'Ustalam lokalizację…' : location ? 'Odśwież moją lokalizację' : 'Pokaż moją lokalizację'}</button>{location && <button type="button" onClick={focusBays}>Wróć do zatok</button>}</div>
+    <div className="bay-map-heading"><div><span>ŚWIĘTOKRZYSKA / WARSZAWA</span><h3>Jedna ulica, różne potrzeby</h3></div><span className="bay-map-count">{matches.length} / {state.bays.length} pasuje</span></div>
+    <p className="bay-map-street">Marszałkowska → pl. Powstańców Warszawy</p>
+    <div className="bay-map-actions"><button type="button" onClick={findMe}>{location ? 'Zmień punkt startowy' : 'Ustaw punkt startowy'}</button>{location && <button type="button" onClick={focusBays}>Wróć do zatok</button>}</div>
+    {showLocationPrompt && <div className="location-prompt" role="group" aria-label="Pozycja demonstracyjna"><strong>Pokazać Cię na tej ulicy?</strong><p>Na potrzeby demo ustawimy punkt startowy przy Świętokrzyskiej. To symulacja; nie pytamy przeglądarki o GPS.</p><div><button type="button" onClick={() => { setLocation(DEMO_START); setLocationMessage('Punkt startowy ustawiony w scenariuszu · pozycja symulowana.'); setShowLocationPrompt(false); }}>Tak, pokaż</button><button type="button" onClick={() => setShowLocationPrompt(false)}>Nie teraz</button></div></div>}
     <div className="bay-map-stage"><div ref={canvasRef} className="bay-map-canvas" aria-label="Mapa OpenStreetMap z modelowymi zatokami A, B i C" />{!ready && !mapError && <div className="bay-map-loading">Ładowanie mapy…</div>}{mapError && <div className="bay-map-loading">Mapa jest chwilowo niedostępna. Lista zatok nadal działa.</div>}</div>
-    <div className="bay-map-legend"><span><i className="legend-delivery" />Dostawa</span><span><i className="legend-parking" />Parking</span><span><i className="legend-pickup" />Odbiór</span><span><i className="legend-unavailable" />Nie pasuje</span>{matches.some(match => availabilityHint(state, match.bay, arrival)?.kind === 'possible_free') && <span><i className="legend-possible" />Może być wolne</span>}{location && <span><i className="legend-user" />Twoja pozycja</span>}</div>
+    <div className="bay-map-legend"><span><i className="legend-delivery" />Dostawa</span><span><i className="legend-parking" />Parking</span><span><i className="legend-pickup" />Odbiór</span><span><i className="legend-unavailable" />Nie pasuje</span>{matches.some(match => availabilityHint(state, match.bay, arrival)?.kind === 'possible_free') && <span><i className="legend-possible" />Może być wolne</span>}{location && <span><i className="legend-user" />Start demo</span>}</div>
     {locationMessage && <p className="bay-map-message" role="status">{locationMessage}</p>}
-    {location && accuracy && <p className="bay-map-message">Pozycja przybliżona · dokładność GPS około {Math.round(accuracy)} m.</p>}
     {tilesError && <p className="bay-map-message">Podkład OpenStreetMap jest niedostępny; znaczniki pozostają orientacyjne.</p>}
-    <p className="bay-map-disclaimer">A–C to punkty demonstracyjne, nie zweryfikowane zatoki. Ich położenie na mapie jest orientacyjne; odległości na liście są częścią scenariusza.</p>
+    <p className="bay-map-disclaimer">Ulica jest prawdziwa. A–C to punkty scenariusza, nie zweryfikowane zatoki; zasady i odległości są demonstracyjne.</p>
   </section>;
 }
