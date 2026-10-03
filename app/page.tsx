@@ -42,7 +42,7 @@ export default function Home() {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [tab, setTab] = useState<Tab>('driver');
   const [driverStep, setDriverStep] = useState<DriverStep>('intent');
-  const [input, setInput] = useState<SearchInput>({ mode: 'delivery', destination: 'shops', arrival: 690, duration: 15, vehicle: 'van' });
+  const [input, setInput] = useState<SearchInput>({ mode: 'delivery', destination: 'shops', arrival: 600, duration: 15, vehicle: 'van' });
   const [submitted, setSubmitted] = useState<SearchInput | null>(null);
   const [activeBayId, setActiveBayId] = useState<string | null>(null);
   const [activeStopEnd, setActiveStopEnd] = useState<number | null>(null);
@@ -105,7 +105,7 @@ export default function Home() {
     {tab === 'driver' && <>
       {driverStep === 'intent' && <section className="intro simple-intro"><p className="eyebrow">JEDNA ZATOKA. RÓŻNE POTRZEBY.</p><h1>Gdzie chcesz<br/><em>się zatrzymać?</em></h1><p className="lede">Wybierz powód postoju. W następnym kroku podasz godzinę i zobaczysz, co wolno.</p></section>}
       {driverStep === 'intent' && <section className="intent-entry"><div className="section-heading"><span>KROK 1 Z 2</span><h2>Po co przyjeżdżasz?</h2></div><div className="intent-grid">
-        {(['delivery', 'parking', 'pickup'] as Mode[]).map((mode, index) => <button key={mode} className={`intent-card ${mode}`} onClick={() => { setInput({ ...input, mode, duration: mode === 'pickup' ? 10 : mode === 'delivery' ? 15 : 30, vehicle: mode === 'delivery' ? 'van' : 'car' }); setSubmitted(null); setSelectedBayId(null); setDriverStep('details'); }}><span>0{index + 1} / {MODE_LABEL[mode].toUpperCase()}</span><strong>{mode === 'delivery' ? 'Dostarczam towar' : mode === 'parking' ? 'Chcę zaparkować' : 'Odbieram kogoś'}</strong><small>{mode === 'delivery' ? 'Krótki rozładunek blisko celu' : mode === 'parking' ? 'Postój na określony czas' : 'Szybkie zatrzymanie przy ulicy'}</small></button>)}
+        {(['delivery', 'parking', 'pickup'] as Mode[]).map((mode, index) => <button key={mode} className={`intent-card ${mode}`} onClick={() => { setInput({ ...input, mode, arrival: Math.max(input.arrival, state.now), duration: mode === 'pickup' ? 10 : mode === 'delivery' ? 15 : 30, vehicle: mode === 'delivery' ? 'van' : 'car' }); setSubmitted(null); setSelectedBayId(null); setDriverStep('details'); }}><span>0{index + 1} / {MODE_LABEL[mode].toUpperCase()}</span><strong>{mode === 'delivery' ? 'Dostarczam towar' : mode === 'parking' ? 'Chcę zaparkować' : 'Odbieram kogoś'}</strong><small>{mode === 'delivery' ? 'Krótki rozładunek blisko celu' : mode === 'parking' ? 'Postój na określony czas' : 'Szybkie zatrzymanie przy ulicy'}</small></button>)}
       </div><p className="intent-note">Pokazujemy, czy postój jest dozwolony. Wolne miejsce potwierdzimy tylko wtedy, gdy będziemy mieć pomiar.</p></section>}
       {driverStep !== 'intent' && <div className={`driver-layout focused ${driverStep === 'details' ? 'form-step' : 'result-step'}`}>
       {driverStep === 'details' && <section className="form-panel"><div className="section-heading"><span>KROK 2 Z 2 · {MODE_LABEL[input.mode].toUpperCase()}</span><h2>Kiedy i gdzie?</h2></div><button className="back-link" onClick={() => setDriverStep('intent')}>Zmień cel postoju</button>
@@ -130,7 +130,7 @@ export default function Home() {
               <div className="match-number">{bay.id}</div>
               <div className="match-body">
                 <div className="match-title"><h3>{bay.name}</h3><button type="button" onClick={() => { setSelectedBayId(bay.id); document.getElementById('mapa-zatok')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }}>Na mapie</button></div>
-                <p>{distance} m do celu <span>·</span> zajętość: <strong className={hint?.kind === 'possible_free' ? 'possible-free-label' : ''}>{hint?.kind === 'possible_free' ? 'może być wolne' : occupancy === 'unknown' ? 'nieznana' : 'zgłoszono zajęcie'}</strong></p>
+                <p>{distance} m do celu <span>·</span> dostępność: <strong className={hint?.kind === 'possible_free' ? 'possible-free-label' : ''}>{hint?.kind === 'possible_free' ? 'może być wolne' : occupancy === 'unknown' ? 'brak potwierdzenia' : 'zgłoszono zajęcie'}</strong></p>
                 <div className="match-modes"><ModeBadge mode={modeAt(bay, submitted.arrival)} />{nextMode(bay, submitted.arrival) && <small>od {formatTime(nextMode(bay, submitted.arrival)!.start)}: {MODE_LABEL[nextMode(bay, submitted.arrival)!.mode]}</small>}</div>
                 <p className="evidence-line">{hint?.kind === 'possible_free' ? hint.detail : occupancyEvidence(state, bay)}</p>
                 {Math.abs(submitted.arrival - state.now) <= 15 && <div className="match-actions">
