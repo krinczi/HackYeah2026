@@ -2,6 +2,7 @@ export type Mode = 'delivery' | 'parking' | 'pickup';
 export type DemoScene = 'parking' | 'delivery' | 'event';
 export type Destination = 'shops' | 'food' | 'stop';
 export type Vehicle = 'car' | 'van';
+export type GeoPoint = { lat: number; lng: number };
 export type Slot = { start: number; end: number; mode: Mode };
 export type Bay = {
   id: string;
@@ -17,6 +18,7 @@ export type StopRequest = {
   id: string;
   mode: Mode;
   destination: Destination;
+  location?: GeoPoint;
   arrival: number;
   duration: number;
   vehicle: Vehicle;
@@ -27,7 +29,8 @@ export type CityEvent = {
   id: string;
   title: string;
   end: number;
-  destination: Destination;
+  placeLabel: string;
+  location: GeoPoint;
   status: 'planned' | 'cancelled';
   source: 'demo' | 'operator_demo';
   updatedAt?: string | null;
@@ -82,7 +85,32 @@ export const MODES: Mode[] = ['delivery', 'parking', 'pickup'];
 export const MODE_LABEL: Record<Mode, string> = { delivery: 'Dostawa', parking: 'Parking', pickup: 'Odbiór' };
 export const DEST_LABEL: Record<Destination, string> = { shops: 'Sklepy', food: 'Restauracje', stop: 'Przystanek' };
 export const MAX_DURATION: Record<Mode, number> = { delivery: 30, parking: 120, pickup: 15 };
+// Model points on a real street, not surveyed parking bays.
+export const DEMO_BAY_POINTS: Record<string, GeoPoint> = {
+  A: { lat: 52.235530, lng: 21.010054 },
+  B: { lat: 52.235833, lng: 21.011530 },
+  C: { lat: 52.236020, lng: 21.012790 },
+};
+export const EVENT_REACH_METERS = 350;
 const WEIGHT: Record<Mode, number> = { delivery: 4, parking: 1, pickup: 3 };
+
+export function distanceMeters(a: GeoPoint, b: GeoPoint): number {
+  const radius = 6371000;
+  const radians = Math.PI / 180;
+  const latDelta = (b.lat - a.lat) * radians;
+  const lngDelta = (b.lng - a.lng) * radians;
+  const value = Math.sin(latDelta / 2) ** 2 + Math.cos(a.lat * radians) * Math.cos(b.lat * radians) * Math.sin(lngDelta / 2) ** 2;
+  return Math.round(radius * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value)));
+}
+
+export function nearestDemoBay(point: GeoPoint): { id: string; distance: number } {
+  return Object.entries(DEMO_BAY_POINTS).map(([id, bayPoint]) => ({ id, distance: distanceMeters(point, bayPoint) })).sort((a, b) => a.distance - b.distance)[0];
+}
+
+function eventDestination(point: GeoPoint): Destination {
+  const nearest = nearestDemoBay(point).id;
+  return nearest === 'A' ? 'shops' : nearest === 'B' ? 'food' : 'stop';
+}
 
 export function formatTime(minute: number): string {
   const h = Math.floor(minute / 60) % 24;
@@ -201,7 +229,7 @@ function overlay(slots: Slot[], start: number, end: number, mode: Mode): Slot[] 
 
 export function eventForecast(state: AppState, start: number, end: number): StopRequest[] {
   const candidates = state.events.filter(event => event.status === 'planned').flatMap(event =>
-    [event.end - 15, event.end + 10].map((arrival, n) => ({ id: `forecast-${event.id}-${n}`, mode: 'pickup' as const, destination: event.destination, arrival, duration: 10, vehicle: 'car' as const, source: 'demo_seed' as const, createdAt: 'założenie demonstracyjne' }))
+    [event.end - 15, event.end + 10].map((arrival, n) => ({ id: `forecast-${event.id}-${n}`, mode: 'pickup' as const, destination: eventDestination(event.location), location: event.location, arrival, duration: 10, vehicle: 'car' as const, source: 'demo_seed' as const, createdAt: 'założenie demonstracyjne' }))
       .filter(request => request.arrival >= start && request.arrival < end && request.arrival + request.duration <= 1320)
       .filter(request => !state.requests.some(real => real.mode === 'pickup' && real.destination === request.destination && Math.abs(real.arrival - request.arrival) <= 12)))
     .sort((a, b) => a.arrival - b.arrival);
@@ -222,12 +250,17 @@ function simulate(state: AppState, bays: Bay[], start: number, end: number): Out
     const possible = bays
       .filter(bay => (request.vehicle !== 'van' || bay.van) && validThroughout(bay, request.mode, request.arrival, request.duration))
       .filter(bay => !recentOccupied(state, bay, request.arrival) && (occupiedUntil.get(bay.id) ?? 0) <= request.arrival)
-      .sort((a, b) => a.distance[request.destination] - b.distance[request.destination]);
+      .filter(bay => !request.location || (DEMO_BAY_POINTS[bay.id] && distanceMeters(DEMO_BAY_POINTS[bay.id], request.location) <= EVENT_REACH_METERS))
+      .sort((a, b) => requestDistance(a, request) - requestDistance(b, request));
     const bay = possible[0];
     if (!bay) return { requestId: request.id, mode: request.mode, served: false, forecast: request.id.startsWith('forecast-') };
     occupiedUntil.set(bay.id, request.arrival + request.duration);
-    return { requestId: request.id, mode: request.mode, served: true, bayId: bay.id, distance: bay.distance[request.destination], forecast: request.id.startsWith('forecast-') };
+    return { requestId: request.id, mode: request.mode, served: true, bayId: bay.id, distance: requestDistance(bay, request), forecast: request.id.startsWith('forecast-') };
   });
+}
+
+function requestDistance(bay: Bay, request: StopRequest): number {
+  return request.location ? distanceMeters(DEMO_BAY_POINTS[bay.id], request.location) : bay.distance[request.destination];
 }
 
 function summarize(outcomes: Outcome[]): { served: Record<Mode, number>; unmet: Record<Mode, number> } {
@@ -288,7 +321,7 @@ export function analyze(state: AppState): Analysis {
   const servedBefore = keep.outcomes.filter(o => o.served && !o.forecast).length;
   const servedAfter = chosen.outcomes.filter(o => o.served && !o.forecast).length;
   const explanation = selected.recommendedId !== 'keep'
-    ? `Obsłużone zgłoszenia w symulacji: ${servedBefore} → ${servedAfter}. Uwzględniono też koszt przełączenia i dojście do celu.`
+    ? `Obsłużone zgłoszenia w symulacji: ${servedBefore} → ${servedAfter}. Uwzględniono też koszt przełączenia i odległość do celu.`
     : forecasts && !state.requests.some(r => r.mode === 'pickup' && r.arrival >= selected.start && r.arrival < selected.end)
       ? 'Wydarzenie sygnalizuje możliwe odbiory, ale bez zgłoszeń użytkowników nie rekomendujemy zmiany.'
       : requests ? 'Żaden wariant nie daje dziś wystarczającej korzyści, aby zmieniać plan.' : 'Brak zgłoszeń dla tego okna. Obecny plan pozostaje najbezpieczniejszym wyborem.';
@@ -320,7 +353,7 @@ export function mutate(state: AppState, action: Record<string, unknown>): AppSta
     }
     if (scene === 'event') {
       const pickups: StopRequest[] = [690, 715, 740].map((arrival, index) => ({ id: `scene-pickup-${index}`, mode: 'pickup', destination: 'stop', arrival, duration: 10, vehicle: 'car', source: 'demo_seed', createdAt: 'scenariusz' }));
-      const event: CityEvent = { id: 'scene-event', title: 'Koniec wydarzenia', end: 720, destination: 'stop', status: 'planned', source: 'demo', updatedAt: null };
+      const event: CityEvent = { id: 'scene-event', title: 'Koniec wydarzenia', placeLabel: 'Punkt przy modelowej zatoce C', location: DEMO_BAY_POINTS.C, end: 720, status: 'planned', source: 'demo', updatedAt: null };
       return { ...seed, scene, now: 630, requests: pickups, events: [event], revision: state.revision + 1 };
     }
     throw new Error('Nieznany scenariusz.');
@@ -342,10 +375,13 @@ export function mutate(state: AppState, action: Record<string, unknown>): AppSta
   }
   if (action.type === 'event_add') {
     const title = String(action.title ?? '').trim();
+    const placeLabel = String(action.placeLabel ?? '').trim();
     const end = Number(action.end);
-    const destination = action.destination as Destination;
-    if (title.length < 3 || title.length > 60 || !Number.isInteger(end) || end < state.now + 30 || end > 1320 || !Object.keys(DEST_LABEL).includes(destination)) throw new Error('Podaj nazwę, okolicę i przyszłą godzinę zakończenia.');
-    const event: CityEvent = { id: crypto.randomUUID(), title, end, destination, status: 'planned', source: 'operator_demo', updatedAt: new Date().toISOString() };
+    const lat = Number(action.lat);
+    const lng = Number(action.lng);
+    const location = { lat, lng };
+    if (title.length < 3 || title.length > 60 || placeLabel.length < 3 || placeLabel.length > 80 || !Number.isInteger(end) || end < state.now + 30 || end > 1320 || !Number.isFinite(lat) || !Number.isFinite(lng) || nearestDemoBay(location).distance > EVENT_REACH_METERS) throw new Error('Podaj nazwę, miejsce na mapie i przyszłą godzinę zakończenia w obszarze pilotażu.');
+    const event: CityEvent = { id: crypto.randomUUID(), title, placeLabel, location: { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6 }, end, status: 'planned', source: 'operator_demo', updatedAt: new Date().toISOString() };
     return { ...state, events: [...state.events, event], revision: state.revision + 1 };
   }
   if (action.type === 'event_cancel') {

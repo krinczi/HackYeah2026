@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyze, applyVariant, availabilityHint, eventForecast, initialState, modeAt, mutate, occupancyEvidence, occupancyStatus, rankBays } from '../lib/core.ts';
+import { analyze, applyVariant, availabilityHint, DEMO_BAY_POINTS, distanceMeters, eventForecast, initialState, modeAt, mutate, nearestDemoBay, occupancyEvidence, occupancyStatus, rankBays } from '../lib/core.ts';
+
+const eventAction = (title, end, bayId = 'C') => ({ type: 'event_add', title, placeLabel: `Punkt przy zatoce ${bayId}`, end, lat: DEMO_BAY_POINTS[bayId].lat, lng: DEMO_BAY_POINTS[bayId].lng });
 
 test('pojedyncza potrzeba nie przełącza planu; kolejna zmienia rekomendację na przyszłość', () => {
   let state = initialState();
@@ -24,7 +26,7 @@ test('postój musi się skończyć przed zmianą funkcji i pasować do pojazdu',
 });
 
 test('samo wydarzenie nie rekomenduje przełączenia zatoki', () => {
-  const state = mutate(initialState(), { type: 'event_add', title: 'Koncert', end: 720, destination: 'stop' });
+  const state = mutate(initialState(), eventAction('Koncert', 720));
   const analysis = analyze(state);
   assert.equal(analysis.recommendedId, 'keep');
   assert.match(analysis.explanation, /wydarzenie/i);
@@ -136,7 +138,7 @@ test('scenariusze dostaw i wydarzenia prowadzą do różnych decyzji miasta', ()
 });
 
 test('wydarzenie można dodać i odwołać, a prognoza nie udaje zgłoszeń', () => {
-  let state = mutate(initialState(), { type: 'event_add', title: 'Koncert przy przystanku', end: 960, destination: 'stop' });
+  let state = mutate(initialState(), eventAction('Koncert przy przystanku', 960));
   assert.equal(state.events.length, 1);
   assert.equal(analyze(state).recommendedId, 'keep');
   const id = state.events[0].id;
@@ -147,7 +149,7 @@ test('wydarzenie można dodać i odwołać, a prognoza nie udaje zgłoszeń', ()
 });
 
 test('późne wydarzenie wraz ze zgłoszeniem może wskazać przyszłe okno', () => {
-  let state = mutate(initialState(), { type: 'event_add', title: 'Wieczorny koncert', end: 960, destination: 'stop' });
+  let state = mutate(initialState(), eventAction('Wieczorny koncert', 960));
   state = mutate(state, { type: 'request', mode: 'pickup', destination: 'stop', arrival: 945, duration: 10, vehicle: 'car' });
   const result = analyze(state);
   assert.ok(result.start >= 900);
@@ -157,9 +159,20 @@ test('późne wydarzenie wraz ze zgłoszeniem może wskazać przyszłe okno', ()
 });
 
 test('nakładające się wydarzenia nie mnożą sztucznych odbiorów', () => {
-  let state = mutate(initialState(), { type: 'event_add', title: 'Koncert pierwszy', end: 960, destination: 'stop' });
-  state = mutate(state, { type: 'event_add', title: 'Koncert drugi', end: 960, destination: 'stop' });
+  let state = mutate(initialState(), eventAction('Koncert pierwszy', 960));
+  state = mutate(state, eventAction('Koncert drugi', 960));
   assert.equal(eventForecast(state, 900, 1020).length, 2);
   state = mutate(state, { type: 'request', mode: 'pickup', destination: 'stop', arrival: 945, duration: 10, vehicle: 'car' });
   assert.equal(eventForecast(state, 900, 1020).length, 1);
+});
+
+test('punkt wydarzenia wpływa na najbliższą zatokę, a odległy punkt jest odrzucany', () => {
+  const point = DEMO_BAY_POINTS.A;
+  assert.equal(distanceMeters(point, point), 0);
+  assert.equal(nearestDemoBay(point).id, 'A');
+  let state = mutate(initialState(), eventAction('Wydarzenie przy A', 960, 'A'));
+  state = mutate(state, { type: 'request', mode: 'pickup', destination: 'shops', arrival: 945, duration: 10, vehicle: 'car' });
+  assert.equal(analyze(state).recommendedId, 'A-pickup');
+  assert.equal(eventForecast(state, 900, 1020)[0].location.lat, point.lat);
+  assert.throws(() => mutate(initialState(), { type: 'event_add', title: 'Daleko', placeLabel: 'Poza odcinkiem', end: 960, lat: 52.22, lng: 21.01 }), /obszarze pilotażu/);
 });

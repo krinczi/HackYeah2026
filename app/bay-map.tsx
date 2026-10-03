@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type * as Leaflet from 'leaflet';
-import { availabilityHint, modeAt, type AppState, type Bay, type Match } from '@/lib/core';
+import { availabilityHint, DEMO_BAY_POINTS, modeAt, type AppState, type Bay, type Match } from '@/lib/core';
 
 type Point = [number, number];
 type Props = {
@@ -13,12 +13,7 @@ type Props = {
   onSelectBay: (id: string) => void;
 };
 
-// Points placed along the real street section for storytelling, not surveyed bays.
-const DEMO_POINTS: Record<string, Point> = {
-  A: [52.235530, 21.010054],
-  B: [52.235833, 21.011530],
-  C: [52.236020, 21.012790],
-};
+const DEMO_POINTS: Record<string, Point> = Object.fromEntries(Object.entries(DEMO_BAY_POINTS).map(([id, point]) => [id, [point.lat, point.lng]]));
 const DEMO_START: Point = [52.235700, 21.010870];
 
 function bayIcon(L: typeof Leaflet, bay: Bay, eligible: boolean, selected: boolean, possibleFree: boolean, arrival: number) {
