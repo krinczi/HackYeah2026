@@ -24,11 +24,12 @@ export type StopRequest = {
   createdAt: string;
 };
 export type CityEvent = {
+  id: string;
   title: string;
   end: number;
-  nearby: boolean;
+  destination: Destination;
   status: 'planned' | 'cancelled';
-  source: 'demo';
+  source: 'demo' | 'operator_demo';
   updatedAt?: string | null;
 };
 export type Observation = {
@@ -57,7 +58,7 @@ export type AppState = {
   requests: StopRequest[];
   observations: Observation[];
   decisions: PlanDecision[];
-  event: CityEvent;
+  events: CityEvent[];
   lastDecision: string | null;
 };
 export type Match = { bay: Bay; distance: number; occupancy: Bay['occupancy'] };
@@ -75,7 +76,7 @@ export type Variant = {
   changes: number;
   reason: string;
 };
-export type Analysis = { start: number; end: number; variants: Variant[]; recommendedId: string; confidence: 'low'; explanation: string };
+export type Analysis = { start: number; end: number; variants: Variant[]; recommendedId: string; confidence: 'low'; explanation: string; signals: { requests: number; forecasts: number; servedBefore: number; servedAfter: number } };
 
 export const MODES: Mode[] = ['delivery', 'parking', 'pickup'];
 export const MODE_LABEL: Record<Mode, string> = { delivery: 'Dostawa', parking: 'Parking', pickup: 'Odbiór' };
@@ -108,7 +109,7 @@ export function initialState(): AppState {
     ],
     observations: [],
     decisions: [],
-    event: { title: 'Wydarzenie przykładowe', end: 720, nearby: true, status: 'cancelled', source: 'demo', updatedAt: null },
+    events: [],
     lastDecision: null,
   };
 }
@@ -199,10 +200,18 @@ function overlay(slots: Slot[], start: number, end: number, mode: Mode): Slot[] 
 }
 
 export function eventForecast(state: AppState, start: number, end: number): StopRequest[] {
-  const event = state.event;
-  const arrival = event.end - 15;
-  if (event.status !== 'planned' || !event.nearby || arrival < start || arrival >= end) return [];
-  return [0, 1].map(n => ({ id: `forecast-${n}`, mode: 'pickup' as const, destination: 'stop' as const, arrival: arrival + n * 8, duration: 10, vehicle: 'car' as const, source: 'demo_seed' as const, createdAt: 'prognoza demonstracyjna' }));
+  const candidates = state.events.filter(event => event.status === 'planned').flatMap(event =>
+    [event.end - 15, event.end + 10].map((arrival, n) => ({ id: `forecast-${event.id}-${n}`, mode: 'pickup' as const, destination: event.destination, arrival, duration: 10, vehicle: 'car' as const, source: 'demo_seed' as const, createdAt: 'założenie demonstracyjne' }))
+      .filter(request => request.arrival >= start && request.arrival < end && request.arrival + request.duration <= 1320)
+      .filter(request => !state.requests.some(real => real.mode === 'pickup' && real.destination === request.destination && Math.abs(real.arrival - request.arrival) <= 12)))
+    .sort((a, b) => a.arrival - b.arrival);
+  const forecasts: StopRequest[] = [];
+  for (const candidate of candidates) {
+    if (forecasts.filter(request => request.destination === candidate.destination).length >= 2) continue;
+    if (forecasts.some(request => request.destination === candidate.destination && Math.abs(request.arrival - candidate.arrival) <= 12)) continue;
+    forecasts.push(candidate);
+  }
+  return forecasts;
 }
 
 function simulate(state: AppState, bays: Bay[], start: number, end: number): Outcome[] {
@@ -233,36 +242,57 @@ function makeVariant(state: AppState, start: number, end: number, bayId: string 
   const outcomes = simulate(state, bays, start, end);
   const { served, unmet } = summarize(outcomes);
   const changes = bayId ? 1 : 0;
-  const distancePenalty = outcomes.filter(o => o.served).reduce((sum, o) => sum + (o.distance ?? 0) / 200, 0);
-  const score = Math.round((unmet.delivery * 4 + unmet.parking + unmet.pickup * 3 + changes * 2 + distancePenalty) * 10) / 10;
+  const unmetPenalty = outcomes.filter(o => !o.served).reduce((sum, o) => sum + WEIGHT[o.mode] * (o.forecast ? 0.5 : 1), 0);
+  const distancePenalty = outcomes.filter(o => o.served).reduce((sum, o) => sum + (o.distance ?? 0) / 200 * (o.forecast ? 0.5 : 1), 0);
+  const score = Math.round((unmetPenalty + changes * 2 + distancePenalty) * 10) / 10;
   const reason = bayId && mode ? `${bayId}: ${MODE_LABEL[mode].toLowerCase()} ${formatTime(start)}–${formatTime(end)}` : 'Zachowaj obecny plan';
   return { id: bayId && mode ? `${bayId}-${mode}` : 'keep', bayId, mode, start, end, score, outcomes, served, unmet, changes, reason };
 }
 
 export function analyze(state: AppState): Analysis {
-  const start = Math.max(660, Math.ceil((state.now + 30) / 60) * 60);
-  const end = Math.min(1320, start + 120);
-  const keep = makeVariant(state, start, end, null, null);
-  const variants = [keep];
-  for (const bay of state.bays) {
-    if (bay.closed || recentOccupied(state, bay, start)) continue;
-    for (const mode of MODES) {
-      if (mode === 'delivery' && !bay.van) continue;
-      if (modeAt(bay, start) === mode) continue;
-      variants.push(makeVariant(state, start, end, bay.id, mode));
+  const first = Math.min(1260, Math.max(660, Math.ceil((state.now + 30) / 60) * 60));
+  const windows = [] as { start: number; end: number; variants: Variant[]; recommendedId: string; gain: number; attention: number }[];
+  for (let start = first; start < 1320; start += 60) {
+    const end = Math.min(1320, start + 120);
+    const keep = makeVariant(state, start, end, null, null);
+    const variants = [keep];
+    for (const bay of state.bays) {
+      if (bay.closed || recentOccupied(state, bay, start) || state.decisions.some(d => d.bayId === bay.id && d.start < end && d.end > start)) continue;
+      const latest = [...state.observations].reverse().find(o => o.bayId === bay.id && o.scenarioMinute <= start);
+      if (latest?.kind === 'arrived' && (latest.expectedEnd ?? 0) > start) continue;
+      for (const mode of MODES) {
+        if (mode === 'delivery' && !bay.van) continue;
+        if (modeAt(bay, start) === mode) continue;
+        variants.push(makeVariant(state, start, end, bay.id, mode));
+      }
     }
+    variants.sort((a, b) => a.score - b.score || a.changes - b.changes || a.id.localeCompare(b.id));
+    const forecasts = eventForecast(state, start, end);
+    const eligible = variants.filter(v => {
+      if (v.id === 'keep' || keep.score - v.score < 2) return false;
+      const signals = state.requests.filter(r => r.mode === v.mode && r.arrival >= start && r.arrival < end).length;
+      if (signals < (v.mode === 'pickup' && forecasts.length ? 1 : 2)) return false;
+      const gained = v.outcomes.filter(o => !o.forecast && o.served && !keep.outcomes.find(k => k.requestId === o.requestId)?.served).length;
+      const lost = keep.outcomes.filter(o => !o.forecast && o.served && !v.outcomes.find(k => k.requestId === o.requestId)?.served).length;
+      return gained > 0 && lost <= gained;
+    });
+    const best = eligible[0];
+    const attention = keep.outcomes.filter(o => !o.served).reduce((sum, o) => sum + (o.forecast ? 0.1 : WEIGHT[o.mode]), 0);
+    windows.push({ start, end, variants, recommendedId: best?.id ?? 'keep', gain: best ? keep.score - best.score : 0, attention });
   }
-  variants.sort((a, b) => a.score - b.score || a.changes - b.changes);
-  const best = variants[0];
-  const realPickupSignals = state.requests.filter(r => r.mode === 'pickup' && r.arrival >= start && r.arrival < end).length;
-  const eventOnly = best.mode === 'pickup' && realPickupSignals === 0;
-  const eventWithoutPickupEvidence = state.event.status === 'planned' && state.event.nearby && realPickupSignals === 0 && eventForecast(state, start, end).length > 0;
-  const improvement = keep.score - best.score;
-  const recommendedId = best.id !== 'keep' && improvement >= 2 && !eventOnly ? best.id : 'keep';
-  const explanation = recommendedId === 'keep'
-    ? eventWithoutPickupEvidence ? 'Samo wydarzenie nie wystarcza do zmiany. Potrzebny jest sygnał odbioru lub potwierdzenie operatora.' : 'Przewaga zmiany jest zbyt mała lub dane są zbyt słabe. Zachowaj plan.'
-    : `${best.reason}. Szacowany koszt niezaspokojonych potrzeb spada o ${improvement.toFixed(1)} pkt.`;
-  return { start, end, variants, recommendedId, confidence: 'low', explanation };
+  const selected = [...windows].sort((a, b) => (b.recommendedId !== 'keep' ? 1 : 0) - (a.recommendedId !== 'keep' ? 1 : 0) || b.gain - a.gain || b.attention - a.attention || a.start - b.start)[0];
+  const keep = selected.variants.find(v => v.id === 'keep')!;
+  const chosen = selected.variants.find(v => v.id === selected.recommendedId)!;
+  const requests = state.requests.filter(r => r.arrival >= selected.start && r.arrival < selected.end).length;
+  const forecasts = eventForecast(state, selected.start, selected.end).length;
+  const servedBefore = keep.outcomes.filter(o => o.served && !o.forecast).length;
+  const servedAfter = chosen.outcomes.filter(o => o.served && !o.forecast).length;
+  const explanation = selected.recommendedId !== 'keep'
+    ? `Obsłużone zgłoszenia w symulacji: ${servedBefore} → ${servedAfter}. Uwzględniono też koszt przełączenia i dojście do celu.`
+    : forecasts && !state.requests.some(r => r.mode === 'pickup' && r.arrival >= selected.start && r.arrival < selected.end)
+      ? 'Wydarzenie sygnalizuje możliwe odbiory, ale bez zgłoszeń użytkowników nie rekomendujemy zmiany.'
+      : requests ? 'Żaden wariant nie daje dziś wystarczającej korzyści, aby zmieniać plan.' : 'Brak zgłoszeń dla tego okna. Obecny plan pozostaje najbezpieczniejszym wyborem.';
+  return { start: selected.start, end: selected.end, variants: selected.variants, recommendedId: selected.recommendedId, confidence: 'low', explanation, signals: { requests, forecasts, servedBefore, servedAfter } };
 }
 
 export function applyVariant(state: AppState, id: string): AppState {
@@ -290,7 +320,8 @@ export function mutate(state: AppState, action: Record<string, unknown>): AppSta
     }
     if (scene === 'event') {
       const pickups: StopRequest[] = [690, 715, 740].map((arrival, index) => ({ id: `scene-pickup-${index}`, mode: 'pickup', destination: 'stop', arrival, duration: 10, vehicle: 'car', source: 'demo_seed', createdAt: 'scenariusz' }));
-      return { ...seed, scene, now: 630, requests: pickups, event: { ...seed.event, status: 'planned' }, revision: state.revision + 1 };
+      const event: CityEvent = { id: 'scene-event', title: 'Koniec wydarzenia', end: 720, destination: 'stop', status: 'planned', source: 'demo', updatedAt: null };
+      return { ...seed, scene, now: 630, requests: pickups, events: [event], revision: state.revision + 1 };
     }
     throw new Error('Nieznany scenariusz.');
   }
@@ -309,11 +340,18 @@ export function mutate(state: AppState, action: Record<string, unknown>): AppSta
     const request: StopRequest = { id: crypto.randomUUID(), mode, destination, arrival, duration, vehicle, source: 'user', createdAt: new Date().toISOString() };
     return { ...state, requests: [...state.requests, request], revision: state.revision + 1 };
   }
-  if (action.type === 'event') {
+  if (action.type === 'event_add') {
+    const title = String(action.title ?? '').trim();
     const end = Number(action.end);
-    const status = action.status as CityEvent['status'];
-    if (!Number.isInteger(end) || end < state.now || end > 1320 || !['planned', 'cancelled'].includes(status)) throw new Error('Nieprawidłowe dane wydarzenia.');
-    return { ...state, event: { ...state.event, end, status, nearby: action.nearby === true, updatedAt: new Date().toISOString() }, revision: state.revision + 1 };
+    const destination = action.destination as Destination;
+    if (title.length < 3 || title.length > 60 || !Number.isInteger(end) || end < state.now + 30 || end > 1320 || !Object.keys(DEST_LABEL).includes(destination)) throw new Error('Podaj nazwę, okolicę i przyszłą godzinę zakończenia.');
+    const event: CityEvent = { id: crypto.randomUUID(), title, end, destination, status: 'planned', source: 'operator_demo', updatedAt: new Date().toISOString() };
+    return { ...state, events: [...state.events, event], revision: state.revision + 1 };
+  }
+  if (action.type === 'event_cancel') {
+    const id = String(action.id);
+    if (!state.events.some(event => event.id === id && event.status === 'planned')) throw new Error('Nie znaleziono aktywnego wydarzenia.');
+    return { ...state, events: state.events.map(event => event.id === id ? { ...event, status: 'cancelled' as const, updatedAt: new Date().toISOString() } : event), revision: state.revision + 1 };
   }
   if (action.type === 'bay') {
     const bayId = String(action.bayId);

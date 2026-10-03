@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyze, applyVariant, availabilityHint, initialState, modeAt, mutate, occupancyEvidence, occupancyStatus, rankBays } from '../lib/core.ts';
+import { analyze, applyVariant, availabilityHint, eventForecast, initialState, modeAt, mutate, occupancyEvidence, occupancyStatus, rankBays } from '../lib/core.ts';
 
 test('pojedyncza potrzeba nie przełącza planu; kolejna zmienia rekomendację na przyszłość', () => {
   let state = initialState();
@@ -24,10 +24,11 @@ test('postój musi się skończyć przed zmianą funkcji i pasować do pojazdu',
 });
 
 test('samo wydarzenie nie rekomenduje przełączenia zatoki', () => {
-  const state = mutate(initialState(), { type: 'event', status: 'planned', end: 720, nearby: true });
+  const state = mutate(initialState(), { type: 'event_add', title: 'Koncert', end: 720, destination: 'stop' });
   const analysis = analyze(state);
   assert.equal(analysis.recommendedId, 'keep');
   assert.match(analysis.explanation, /wydarzenie/i);
+  assert.equal(analysis.signals.forecasts, 2);
 });
 
 test('zamknięcie i świeże zgłoszenie zajęcia blokują wskazanie miejsca', () => {
@@ -131,5 +132,34 @@ test('scenariusze dostaw i wydarzenia prowadzą do różnych decyzji miasta', ()
   const event = mutate(initialState(), { type: 'scene', scene: 'event' });
   assert.equal(analyze(delivery).recommendedId, 'A-delivery');
   assert.equal(analyze(event).recommendedId, 'C-pickup');
-  assert.equal(event.event.source, 'demo');
+  assert.equal(event.events[0].source, 'demo');
+});
+
+test('wydarzenie można dodać i odwołać, a prognoza nie udaje zgłoszeń', () => {
+  let state = mutate(initialState(), { type: 'event_add', title: 'Koncert przy przystanku', end: 960, destination: 'stop' });
+  assert.equal(state.events.length, 1);
+  assert.equal(analyze(state).recommendedId, 'keep');
+  const id = state.events[0].id;
+  state = mutate(state, { type: 'event_cancel', id });
+  assert.equal(state.events[0].status, 'cancelled');
+  assert.equal(analyze(state).signals.forecasts, 0);
+  assert.throws(() => mutate(state, { type: 'event_cancel', id }), /aktywnego/);
+});
+
+test('późne wydarzenie wraz ze zgłoszeniem może wskazać przyszłe okno', () => {
+  let state = mutate(initialState(), { type: 'event_add', title: 'Wieczorny koncert', end: 960, destination: 'stop' });
+  state = mutate(state, { type: 'request', mode: 'pickup', destination: 'stop', arrival: 945, duration: 10, vehicle: 'car' });
+  const result = analyze(state);
+  assert.ok(result.start >= 900);
+  assert.equal(result.recommendedId, 'C-pickup');
+  assert.equal(result.signals.requests, 1);
+  assert.equal(result.signals.forecasts, 1);
+});
+
+test('nakładające się wydarzenia nie mnożą sztucznych odbiorów', () => {
+  let state = mutate(initialState(), { type: 'event_add', title: 'Koncert pierwszy', end: 960, destination: 'stop' });
+  state = mutate(state, { type: 'event_add', title: 'Koncert drugi', end: 960, destination: 'stop' });
+  assert.equal(eventForecast(state, 900, 1020).length, 2);
+  state = mutate(state, { type: 'request', mode: 'pickup', destination: 'stop', arrival: 945, duration: 10, vehicle: 'car' });
+  assert.equal(eventForecast(state, 900, 1020).length, 1);
 });

@@ -7,8 +7,11 @@ let queue = Promise.resolve();
 
 async function load(): Promise<AppState> {
   try {
-    const state = JSON.parse(await readFile(statePath, 'utf8')) as AppState;
-    return { ...state, observations: state.observations ?? [], decisions: state.decisions ?? [] };
+    const state = JSON.parse(await readFile(statePath, 'utf8')) as AppState & { event?: { title: string; end: number; status: 'planned' | 'cancelled'; updatedAt?: string | null } };
+    const events = Array.isArray(state.events) ? state.events : state.event?.status === 'planned'
+      ? [{ id: 'legacy-event', title: state.event.title, end: state.event.end, destination: 'stop' as const, status: 'planned' as const, source: 'demo' as const, updatedAt: state.event.updatedAt }]
+      : [];
+    return { ...state, events, observations: state.observations ?? [], decisions: state.decisions ?? [] };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     return initialState();

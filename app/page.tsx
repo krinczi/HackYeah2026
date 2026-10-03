@@ -55,9 +55,10 @@ export default function Home() {
   const [selectedBayId, setSelectedBayId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [eventTitle, setEventTitle] = useState('');
   const [eventEnd, setEventEnd] = useState(720);
-  const [eventStatus, setEventStatus] = useState<'planned' | 'cancelled'>('cancelled');
-  const [eventNearby, setEventNearby] = useState(true);
+  const [eventDestination, setEventDestination] = useState<Destination>('stop');
+  const [showEventForm, setShowEventForm] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -69,7 +70,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => { void refresh(); const timer = setInterval(() => void refresh(), 1500); return () => clearInterval(timer); }, [refresh]);
-  useEffect(() => { if (payload) { setEventEnd(payload.state.event.end); setEventStatus(payload.state.event.status); setEventNearby(payload.state.event.nearby); } }, [payload?.state.event.end, payload?.state.event.status, payload?.state.event.nearby]);
+  useEffect(() => { if (payload) setEventEnd(current => Math.max(current, Math.ceil((payload.state.now + 30) / 30) * 30)); }, [payload?.state.now]);
 
   const act = useCallback(async (action: Record<string, unknown>, success: string) => {
     setBusy(true); setNotice('');
@@ -90,8 +91,9 @@ export default function Home() {
   const futureVariants = useMemo(() => {
     if (!analysis) return [];
     const keep = analysis.variants.find(v => v.id === 'keep');
-    const changes = analysis.variants.filter(v => v.id !== 'keep').slice(0, 2);
-    return keep ? [keep, ...changes] : changes;
+    const recommended = analysis.variants.find(v => v.id === analysis.recommendedId && v.id !== 'keep');
+    const other = analysis.variants.find(v => v.id !== 'keep' && v.id !== recommended?.id);
+    return [recommended, keep, other].filter((variant): variant is NonNullable<typeof variant> => Boolean(variant));
   }, [analysis]);
 
   async function openScene(scene: DemoScene) {
@@ -127,6 +129,8 @@ export default function Home() {
   const demoIndex = demoScene ? SCENES.findIndex(scene => scene.id === demoScene) : -1;
 
   if (!state || !analysis) return <main className="loading">Ładowanie ulicy…</main>;
+  const activeEvents = state.events.filter(event => event.status === 'planned' && event.end >= state.now).sort((a, b) => a.end - b.end);
+  const selectedPlan = analysis.variants.find(variant => variant.id === analysis.recommendedId)!;
 
   return <main className="shell">
     <header className="topbar">
@@ -189,12 +193,23 @@ export default function Home() {
     </>}
 
     {tab === 'city' && <div className="city-layout">
-      <section className="city-entry"><div><span className="eyebrow">PANEL MIASTA · PROTOTYP</span><h1>Ulica ma swój rytm.</h1><p>Sprawdź rekomendację dla przyszłego okna. To miasto wybiera plan.</p></div><div className="city-entry-actions"><button className="back-link" onClick={() => setTab('sign')}>Zobacz widok zatoki</button></div></section>
-      <section className="decision-panel"><div className="section-heading compact"><span>DECYZJA / {formatTime(analysis.start)}–{formatTime(analysis.end)}</span><h2>Co zmienić dalej?</h2><p>Prognoza demonstracyjna oparta na zgłoszeniach i sygnale wydarzenia. Pewność: <b>niska</b>.</p></div>
-        <div className="recommendation"><span>REKOMENDACJA</span><strong>{analysis.recommendedId === 'keep' ? 'Zachowaj plan' : analysis.variants.find(v => v.id === analysis.recommendedId)?.reason}</strong><p>{analysis.explanation}</p>{analysis.recommendedId !== 'keep' && <button disabled={busy} onClick={() => void act({ type: 'approve', id: analysis.recommendedId }, 'Zatwierdzono przyszły plan.')}>Zatwierdź ten plan</button>}</div>
-        <details className="progressive-details"><summary>Porównaj inne warianty</summary><div className="variant-list">{futureVariants.map(variant => <article className={`variant ${variant.id === analysis.recommendedId ? 'recommended' : ''}`} key={variant.id}><div className="variant-head"><h3>{variant.reason}</h3>{variant.id === analysis.recommendedId && <span>polecany</span>}</div><div className="variant-stats"><span><b>{variant.served.delivery}</b> dostaw</span><span><b>{variant.served.parking}</b> postojów</span><span><b>{variant.served.pickup}</b> odbiorów</span><span><b>{variant.unmet.delivery + variant.unmet.parking + variant.unmet.pickup}</b> bez miejsca</span></div><button disabled={busy} onClick={() => void act({ type: 'approve', id: variant.id }, `Zapisano plan: ${variant.reason}.`)}>Wybierz plan</button></article>)}</div></details>
-        <details className="progressive-details cadence-details"><summary>Jak często plan się zmienia?</summary><p>Algorytm może liczyć codziennie, ale miasto zatwierdza harmonogram z wyprzedzeniem. W pilotażu proponujemy przegląd co tydzień, później co 2–4 tygodnie. Wydarzenia mają osobny, wcześniej zatwierdzony plan.</p></details>
-        <p className="fineprint">Niższy wynik oznacza mniej niezaspokojonych potrzeb, z kosztem zmiany planu. To symulacja zgłoszeń, nie pomiar całej ulicy.</p>
+      <section className="city-entry"><div><span className="eyebrow">PANEL MIASTA · PROTOTYP</span><h1>Ulica ma swój rytm.</h1><p>Sprawdź rekomendację dla przyszłego okna. To miasto wybiera plan.</p></div><div className="city-entry-actions"><button className="event-jump" onClick={() => { setShowEventForm(true); document.getElementById('wydarzenia')?.scrollIntoView({ behavior: 'smooth' }); }}>+ Dodaj wydarzenie</button><button className="back-link" onClick={() => setTab('sign')}>Zobacz widok zatoki</button></div></section>
+      <section className="decision-panel"><div className="section-heading compact"><span>PLAN DLA MIASTA / {formatTime(analysis.start)}–{formatTime(analysis.end)}</span><h2>Co zmienić dalej?</h2><p>System porównuje warianty przyszłego planu. Decyzję zatwierdza miasto.</p></div>
+        <div className="recommendation">
+          <div className="recommendation-top"><span>{analysis.recommendedId === 'keep' ? 'NA RAZIE BEZ ZMIANY' : 'REKOMENDACJA DO ZATWIERDZENIA'}</span><span>{formatTime(analysis.start)}–{formatTime(analysis.end)}</span></div>
+          <strong>{selectedPlan.bayId && selectedPlan.mode ? `Zatoka ${selectedPlan.bayId} → ${MODE_LABEL[selectedPlan.mode].toLowerCase()}` : 'Zachowaj obecny plan'}</strong>
+          <p>{analysis.explanation}</p>
+          <div className="recommendation-facts"><div><b>{analysis.signals.servedAfter}/{analysis.signals.requests}</b><span>zgłoszeń obsłużonych</span></div><div><b>{analysis.signals.forecasts}</b><span>sygnały prognozy</span></div></div>
+          {analysis.recommendedId !== 'keep' && <button disabled={busy} onClick={() => void act({ type: 'approve', id: analysis.recommendedId }, 'Zatwierdzono przyszły plan.')}>Zatwierdź plan <span>↗</span></button>}
+        </div>
+        <p className="decision-basis">Zgłoszenia w oknie: {analysis.signals.requests} · Prognozy z wydarzeń: {analysis.signals.forecasts} · Pewność: niska.</p>
+        <details className="progressive-details"><summary>Porównaj warianty i skutki</summary><div className="variant-list">{futureVariants.map(variant => {
+          const actualServed = variant.outcomes.filter(outcome => outcome.served && !outcome.forecast).length;
+          const actualUnmet = variant.outcomes.filter(outcome => !outcome.served && !outcome.forecast).length;
+          return <article className={`variant ${variant.id === analysis.recommendedId ? 'recommended' : ''}`} key={variant.id}><div className="variant-head"><h3>{variant.id === 'keep' ? 'Bez zmiany' : `Zatoka ${variant.bayId} → ${MODE_LABEL[variant.mode!].toLowerCase()}`}</h3>{variant.id === analysis.recommendedId && <span>rekomendacja</span>}</div><p>{formatTime(variant.start)}–{formatTime(variant.end)} · {variant.changes ? '1 zmiana funkcji' : 'obecny harmonogram'}</p><div className="variant-stats"><span><b>{actualServed}/{analysis.signals.requests}</b> zgłoszeń obsłużonych</span><span><b>{actualUnmet}</b> bez miejsca</span></div>{variant.id === 'keep' && analysis.recommendedId === 'keep' ? <span className="variant-current">Obecny plan</span> : <button disabled={busy} onClick={() => void act({ type: 'approve', id: variant.id }, `Zapisano plan: ${variant.reason}.`)}>{variant.id === 'keep' ? 'Zachowaj plan' : 'Wybierz ten wariant'} <span>↗</span></button>}</article>;
+        })}</div></details>
+        <details className="progressive-details cadence-details"><summary>Jak powstała rekomendacja?</summary><p>Porównujemy przyszłe okna i funkcje zatok. Odrzucamy zamknięte miejsca, zły typ pojazdu i kolizje z zatwierdzonym planem. Liczymy nieobsłużone zgłoszenia, dojście do celu i koszt zmiany. Prognoza wydarzenia ma mniejszą wagę niż zgłoszenie użytkownika i sama nie wystarczy do zmiany. Miasto zatwierdza plan z wyprzedzeniem; w pilotażu proponujemy przegląd co tydzień i osobny plan na wydarzenia.</p></details>
+        <p className="fineprint">Symulacja uwzględnia zgodność funkcji, czas postoju, dojście do celu i koszt zmiany planu. Nie mierzy całej ulicy.</p>
         {state.decisions.length > 0 && <div className="decision-log"><span>ZATWIERDZONE Z WYPRZEDZENIEM · DEMO</span>{state.decisions.slice(-3).reverse().map(decision => <p key={decision.id}><b>Zatoka {decision.bayId}</b> · {MODE_LABEL[decision.mode]} {formatTime(decision.start)}–{formatTime(decision.end)}<small>Zatwierdzono w scenariuszu o {formatTime(decision.scenarioMinute)}</small></p>)}</div>}
       </section>
       <section className="timeline-panel"><div className="section-heading compact"><span>ODCINEK / SCENARIUSZ</span><h2>Rytm ulicy</h2><p>Godzina scenariusza: <b>{formatTime(state.now)}</b>. Zatoki i odległości są demonstracyjne.</p></div>
@@ -204,15 +219,12 @@ export default function Home() {
         <div className="demand-strip"><div><small>ZGŁOSZENIA</small><strong>{state.requests.length}</strong></div><div><small>DOSTAWY BEZ MIEJSCA</small><strong>{analysis.variants.find(v => v.id === 'keep')?.unmet.delivery ?? 0}</strong></div><div><small>PARKING BEZ MIEJSCA</small><strong>{analysis.variants.find(v => v.id === 'keep')?.unmet.parking ?? 0}</strong></div></div>
         <div className="evidence-panel"><span>DANE Z ULICY / DEMO</span><strong>{state.observations.length} zgłoszeń zajętości</strong><p>{state.observations.length ? `Ostatnie: zatoka ${state.observations.at(-1)!.bayId}, ${state.observations.at(-1)!.kind === 'departed' ? 'odjazd' : 'zajęcie'} o ${formatTime(state.observations.at(-1)!.scenarioMinute)}. To deklaracja, nie czujnik.` : 'Brak obserwacji. Zgłoszenia potrzeb służą prognozie, nie potwierdzają wolnego miejsca.'}</p></div>
       </section>
+      <section className="events-panel" id="wydarzenia"><div className="events-heading"><div><span>SYGNAŁ DLA PROGNOZY</span><h2>Wydarzenia w okolicy</h2><p>Podaj miejsce i godzinę zakończenia w dniu scenariusza. System sprawdzi możliwy ruch odbiorów razem ze zgłoszeniami.</p></div><button type="button" onClick={() => setShowEventForm(open => !open)}>{showEventForm ? 'Zamknij formularz' : '+ Dodaj wydarzenie'}</button></div>
+        {activeEvents.length > 0 ? <div className="event-list">{activeEvents.map(event => <article key={event.id} className="event-item"><div><span>{formatTime(event.end)} · {DEST_LABEL[event.destination]} · {event.source === 'demo' ? 'scenariusz demo' : 'wpis operatora'}</span><strong>{event.title}</strong></div><button type="button" disabled={busy} onClick={() => void act({ type: 'event_cancel', id: event.id }, 'Wydarzenie odwołane. Prognoza została przeliczona.')}>Odwołaj</button></article>)}</div> : <p className="event-empty">Brak aktywnych wydarzeń w scenariuszu.</p>}
+        {showEventForm && <form className="event-form" onSubmit={async e => { e.preventDefault(); if (await act({ type: 'event_add', title: eventTitle, end: eventEnd, destination: eventDestination }, 'Wydarzenie dodane. Rekomendacja została przeliczona.')) { setEventTitle(''); setShowEventForm(false); } }}><div className="event-form-fields"><label>Nazwa wydarzenia<input value={eventTitle} onChange={e => setEventTitle(e.target.value)} minLength={3} maxLength={60} placeholder="np. koncert przy przystanku" required /></label><label>Okolica<select value={eventDestination} onChange={e => setEventDestination(e.target.value as Destination)}><option value="stop">Przy przystanku</option><option value="shops">Przy sklepach</option><option value="food">Przy restauracjach</option></select></label><label>Przewidywany koniec<select value={eventEnd} onChange={e => setEventEnd(Number(e.target.value))}>{Array.from({ length: 25 }, (_, i) => 600 + i * 30).filter(minute => minute >= state.now + 30).map(minute => <option key={minute} value={minute}>{formatTime(minute)}</option>)}</select></label></div><div className="event-form-bottom"><p>To wpis operatora w demo. Model dodaje do dwóch hipotetycznych odbiorów wokół końca wydarzenia; sama prognoza nie zatwierdza zmiany planu.</p><button type="submit" disabled={busy}>Dodaj i przelicz <span>↗</span></button></div></form>}
+        <p className="event-provenance">W tym prototypie wydarzenia są dodawane ręcznie. Nie korzystamy jeszcze z miejskiego API wydarzeń.</p>
+      </section>
       <details className="controls-panel"><summary>Scenariusze i ustawienia</summary><div className="section-heading compact"><span>SYGNAŁY / KONTROLA</span><h2>Sprawdź sytuacje brzegowe</h2></div>
-        <div className="control-block">
-          <h3>Wydarzenie w okolicy <span>DEMO</span></h3>
-          <p>Planowany koniec może podnieść prognozę odbiorów. Sam w sobie nie wystarcza do rekomendacji zmiany.</p>
-          <p className="event-source">{state.event.title} · źródło: scenariusz demonstracyjny · {state.event.updatedAt ? `zmieniono ${new Date(state.event.updatedAt).toLocaleString('pl-PL')}` : 'bez danych miejskich'}</p>
-          <div className="control-fields"><label>Status<select value={eventStatus} onChange={e => setEventStatus(e.target.value as 'planned' | 'cancelled')}><option value="cancelled">Odwołane</option><option value="planned">Planowane</option></select></label><label>Koniec<select value={eventEnd} onChange={e => setEventEnd(Number(e.target.value))}>{[660, 690, 720, 750, 780, 810, 840, 900].filter(n => n >= state.now).map(n => <option key={n} value={n}>{formatTime(n)}</option>)}</select></label></div>
-          <label className="check"><input type="checkbox" checked={eventNearby} onChange={e => setEventNearby(e.target.checked)}/> W pobliżu zatok</label>
-          <button className="secondary" disabled={busy} onClick={() => void act({ type: 'event', status: eventStatus, end: eventEnd, nearby: eventNearby }, 'Zaktualizowano sygnał wydarzenia.')}>Przelicz wydarzenie</button>
-        </div>
         <div className="control-block"><h3>Stan zatok <span>ZGŁOSZENIE</span></h3>{state.bays.map(bay => <div className="bay-control" key={bay.id}><strong>{bay.name}</strong><button disabled={busy} onClick={() => void act({ type: 'bay', bayId: bay.id, closed: bay.closed, occupancy: occupancyStatus(bay, state.now) === 'unknown' ? 'reported_occupied' : 'unknown' }, 'Zmieniono zgłoszony stan zatoki.')}>{occupancyStatus(bay, state.now) === 'unknown' ? 'Zgłoś zajęcie' : 'Usuń zgłoszenie'}</button><button disabled={busy} onClick={() => void act({ type: 'bay', bayId: bay.id, closed: !bay.closed, occupancy: occupancyStatus(bay, state.now) }, 'Zmieniono dostępność zatoki.')}>{bay.closed ? 'Włącz' : 'Wyłącz'}</button></div>)}</div>
         <div className="control-footer"><button className="text-button" disabled={busy} onClick={() => void act({ type: 'advance', now: Math.min(1260, state.now + 30) }, 'Czas scenariusza przesunięty o 30 minut.')}>+30 min scenariusza</button><button className="text-button reset" disabled={busy} onClick={() => { setSubmitted(null); setActiveBayId(null); setDriverStep('intent'); void act({ type: 'reset' }, 'Scenariusz przywrócony.'); }}>Reset scenariusza</button></div>
       </details>
