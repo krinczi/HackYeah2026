@@ -143,8 +143,14 @@ select:focus,button:focus-visible,input:focus-visible{outline:3px solid var(--or
 .intent-card small{font-size:clamp(12px,1.05vw,15px);color:var(--muted);line-height:1.4}
 .intent-note{font-size:12px;color:var(--muted);margin:17px 0 0;line-height:1.5}
 .driver-layout.focused{display:block;max-width:720px;padding:18px 0 85px}
+.driver-layout.focused.form-step{max-width:1040px;margin-inline:auto}
+.form-step .form-panel{padding:clamp(30px,3vw,44px)}
+.form-step .fields{grid-template-columns:repeat(3,minmax(0,1fr));gap:22px}
+.form-step .fields:has(label:nth-child(4)){grid-template-columns:repeat(2,minmax(0,1fr))}
+.form-step select{height:56px}
+.form-step .primary{height:62px}
 .driver-layout.focused .result-panel{padding:10px 0}
-.back-link{border:0;background:transparent;color:var(--ink);font-size:12px;font-weight:800;padding:0 0 5px;border-bottom:1px solid var(--ink);text-align:left}
+.back-link{min-height:38px;border:0;background:transparent;color:var(--ink);font-size:14px;font-weight:800;line-height:1.3;padding:7px 0;border-bottom:2px solid var(--ink);text-align:left}
 .back-link:hover{color:var(--orange);border-color:var(--orange)}
 .form-panel .back-link,.result-panel .back-link{margin:-4px 0 25px}
 .city-entry{grid-column:1/-1;display:flex;align-items:end;justify-content:space-between;gap:25px;border-bottom:1px solid var(--line);padding-bottom:25px;margin-bottom:30px}
@@ -172,3 +178,5 @@ footer{display:flex;justify-content:space-between;gap:20px;border-top:2px solid 
 @media(max-width:1100px){.city-entry{grid-row:1}.decision-panel{grid-row:2;margin-top:0}.timeline-panel{grid-row:3;margin-top:28px}.controls-panel{grid-row:4}}
 @media(max-width:410px){.top-meta .demo-pill{font-size:0;padding:6px 8px}.top-meta .demo-pill::after{content:'DEMO';font-size:9px}}
 @media(max-width:390px){.fields{grid-template-columns:1fr}.mode-picker button{font-size:10px}.top-meta{font-size:9px}.demo-pill{padding:6px}}
+@media(max-width:1050px){.form-step .fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:750px){.form-step .form-panel{padding:22px}.form-step .fields,.form-step .fields:has(label:nth-child(4)){grid-template-columns:1fr;gap:18px}}
