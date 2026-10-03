@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DEST_LABEL, formatTime, MAX_DURATION, MODE_LABEL, modeAt, occupancyEvidence, occupancyStatus, rankBays, type Analysis, type AppState, type Bay, type Destination, type Mode, type Vehicle } from '@/lib/core';
+import BayMap from './bay-map';
 
 type Payload = { state: AppState; analysis: Analysis };
 type Tab = 'driver' | 'city' | 'sign';
@@ -44,6 +45,7 @@ export default function Home() {
   const [input, setInput] = useState<SearchInput>({ mode: 'delivery', destination: 'shops', arrival: 690, duration: 15, vehicle: 'van' });
   const [submitted, setSubmitted] = useState<SearchInput | null>(null);
   const [activeBayId, setActiveBayId] = useState<string | null>(null);
+  const [selectedBayId, setSelectedBayId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [eventEnd, setEventEnd] = useState(720);
@@ -102,27 +104,30 @@ export default function Home() {
     {tab === 'driver' && <>
       {driverStep === 'intent' && <section className="intro simple-intro"><p className="eyebrow">JEDNA ZATOKA. RÓŻNE POTRZEBY.</p><h1>Gdzie chcesz<br/><em>się zatrzymać?</em></h1><p className="lede">Wybierz powód postoju. W następnym kroku podasz godzinę i zobaczysz, co wolno.</p></section>}
       {driverStep === 'intent' && <section className="intent-entry"><div className="section-heading"><span>KROK 1 Z 2</span><h2>Po co przyjeżdżasz?</h2></div><div className="intent-grid">
-        {(['delivery', 'parking', 'pickup'] as Mode[]).map((mode, index) => <button key={mode} className={`intent-card ${mode}`} onClick={() => { setInput({ ...input, mode, duration: mode === 'pickup' ? 10 : mode === 'delivery' ? 15 : 30, vehicle: mode === 'delivery' ? 'van' : 'car' }); setSubmitted(null); setDriverStep('details'); }}><span>0{index + 1} / {MODE_LABEL[mode].toUpperCase()}</span><strong>{mode === 'delivery' ? 'Dostarczam towar' : mode === 'parking' ? 'Chcę zaparkować' : 'Odbieram kogoś'}</strong><small>{mode === 'delivery' ? 'Krótki rozładunek blisko celu' : mode === 'parking' ? 'Postój na określony czas' : 'Szybkie zatrzymanie przy ulicy'}</small></button>)}
+        {(['delivery', 'parking', 'pickup'] as Mode[]).map((mode, index) => <button key={mode} className={`intent-card ${mode}`} onClick={() => { setInput({ ...input, mode, duration: mode === 'pickup' ? 10 : mode === 'delivery' ? 15 : 30, vehicle: mode === 'delivery' ? 'van' : 'car' }); setSubmitted(null); setSelectedBayId(null); setDriverStep('details'); }}><span>0{index + 1} / {MODE_LABEL[mode].toUpperCase()}</span><strong>{mode === 'delivery' ? 'Dostarczam towar' : mode === 'parking' ? 'Chcę zaparkować' : 'Odbieram kogoś'}</strong><small>{mode === 'delivery' ? 'Krótki rozładunek blisko celu' : mode === 'parking' ? 'Postój na określony czas' : 'Szybkie zatrzymanie przy ulicy'}</small></button>)}
       </div><p className="intent-note">Pokazujemy, czy postój jest dozwolony. Wolne miejsce potwierdzimy tylko wtedy, gdy będziemy mieć pomiar.</p></section>}
-      {driverStep !== 'intent' && <div className={`driver-layout focused ${driverStep === 'details' ? 'form-step' : ''}`}>
+      {driverStep !== 'intent' && <div className={`driver-layout focused ${driverStep === 'details' ? 'form-step' : 'result-step'}`}>
       {driverStep === 'details' && <section className="form-panel"><div className="section-heading"><span>KROK 2 Z 2 · {MODE_LABEL[input.mode].toUpperCase()}</span><h2>Kiedy i gdzie?</h2></div><button className="back-link" onClick={() => setDriverStep('intent')}>Zmień cel postoju</button>
         <div className="fields"><label>Cel podróży<select value={input.destination} onChange={e => setInput({ ...input, destination: e.target.value as Destination })}>{Object.entries(DEST_LABEL).map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select></label>
         <label>Przyjazd<select value={input.arrival} onChange={e => setInput({ ...input, arrival: Number(e.target.value) })}>{Array.from({ length: 45 }, (_, i) => 600 + i * 15).filter(minute => minute >= state.now && minute <= 1300).map(minute => <option key={minute} value={minute}>{formatTime(minute)}</option>)}</select></label>
         <label>Czas postoju<select value={input.duration} onChange={e => setInput({ ...input, duration: Number(e.target.value) })}>{[10, 15, 20, 30, 45, 60, 90, 120].filter(n => n <= MAX_DURATION[input.mode]).map(n => <option key={n} value={n}>{n} min</option>)}</select></label>
         {input.mode === 'delivery' && <label>Pojazd<select value={input.vehicle} onChange={e => setInput({ ...input, vehicle: e.target.value as Vehicle })}><option value="van">Dostawczy</option><option value="car">Osobowy</option></select></label>}</div>
-        <button className="primary" disabled={busy} onClick={async () => { const result = await act({ type: 'request', ...input }, ''); if (result) { setSubmitted({ ...input }); setDriverStep('results'); } }}>Pokaż pasujące zatoki</button>
+        <button className="primary" disabled={busy} onClick={async () => { const result = await act({ type: 'request', ...input }, ''); if (result) { setSubmitted({ ...input }); setSelectedBayId(null); setDriverStep('results'); } }}>Pokaż pasujące zatoki</button>
         <p className="fineprint">Zgłoszenie pokazuje popyt; nie rezerwuje publicznego miejsca.</p>
       </section>}
-      {driverStep === 'results' && <section className="result-panel"><div className="section-heading"><span>WYNIK / {submitted ? formatTime(submitted.arrival) : 'TWÓJ POSTÓJ'}</span><h2>{activeBayId ? 'Twój postój' : submitted ? matches.length ? 'Tu wolno się zatrzymać' : 'Brak pasującej zatoki' : 'Zacznij nowe szukanie'}</h2></div><button className="back-link" onClick={() => { setSubmitted(null); setDriverStep('details'); }}>Zmień godzinę lub miejsce</button>
+      {driverStep === 'results' && <section className="result-panel"><div className="section-heading"><span>WYNIK / {submitted ? formatTime(submitted.arrival) : 'TWÓJ POSTÓJ'}</span><h2>{activeBayId ? 'Twój postój' : submitted ? matches.length ? 'Tu wolno się zatrzymać' : 'Brak pasującej zatoki' : 'Zacznij nowe szukanie'}</h2></div><button className="back-link" onClick={() => { setSubmitted(null); setSelectedBayId(null); setDriverStep('details'); }}>Zmień godzinę lub miejsce</button>
         {activeBayId && <div className="active-stop"><span>TWÓJ POSTÓJ · ZATOKA {activeBayId}</span><strong>Przyjazd zgłoszony</strong><p>To zgłoszenie użytkownika, nie pomiar czujnika. Po wyjeździe oznaczymy zajętość jako nieznaną.</p><button disabled={busy} onClick={async () => { if (await act({ type: 'observation', bayId: activeBayId, kind: 'departed' }, 'Odjazd zapisany. Wolne miejsce nie jest potwierdzone.')) setActiveBayId(null); }}>Odjeżdżam</button></div>}
         {!submitted && !activeBayId && <div className="empty-state"><p>Wybierz godzinę i sprawdź kolejną zatokę.</p></div>}
-        {submitted && matches.length > 0 && <>
+        {submitted && <>
           <p className="result-lead">{MODE_LABEL[submitted.mode]} · {formatTime(submitted.arrival)} · {submitted.duration} min. Zgodność z <strong>modelem zasad</strong>, bez gwarancji wolnego miejsca.</p>
-          <div className="match-list">{matches.map(({ bay, distance, occupancy }) =>
-            <article className="match" key={bay.id}>
+          <div className="results-columns">
+            <BayMap bays={state.bays} matches={matches} arrival={submitted.arrival} selectedBayId={selectedBayId} onSelectBay={setSelectedBayId} />
+            <div className="result-list-column">
+          {matches.length > 0 && <div className="match-list">{matches.map(({ bay, distance, occupancy }) =>
+            <article className={`match ${selectedBayId === bay.id ? 'map-selected' : ''}`} key={bay.id}>
               <div className="match-number">{bay.id}</div>
               <div className="match-body">
-                <h3>{bay.name}</h3>
+                <div className="match-title"><h3>{bay.name}</h3><button type="button" onClick={() => { setSelectedBayId(bay.id); document.getElementById('mapa-zatok')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }}>Na mapie</button></div>
                 <p>{distance} m do celu <span>·</span> zajętość: <strong>{occupancy === 'unknown' ? 'nieznana' : 'zgłoszono zajęcie'}</strong></p>
                 <div className="match-modes"><ModeBadge mode={modeAt(bay, submitted.arrival)} />{nextMode(bay, submitted.arrival) && <small>od {formatTime(nextMode(bay, submitted.arrival)!.start)}: {MODE_LABEL[nextMode(bay, submitted.arrival)!.mode]}</small>}</div>
                 <p className="evidence-line">{occupancyEvidence(state, bay)}</p>
@@ -132,9 +137,11 @@ export default function Home() {
                 </div>}
               </div>
             </article>
-          )}</div>
+          )}</div>}
+          {matches.length === 0 && <div className="no-match"><strong>Nie kierujemy Cię do miejsca, w którym postój byłby niedozwolony.</strong><p>Twoja nieobsłużona potrzeba trafiła do porównania przyszłych planów.</p>{futureTime && <p>Najbliższy pasujący termin w tym modelu: <b>{formatTime(futureTime)}</b>.</p>}</div>}
+            </div>
+          </div>
         </>}
-        {submitted && matches.length === 0 && <div className="no-match"><strong>Nie kierujemy Cię do miejsca, w którym postój byłby niedozwolony.</strong><p>Twoja nieobsłużona potrzeba trafiła do porównania przyszłych planów.</p>{futureTime && <p>Najbliższy pasujący termin w tym modelu: <b>{formatTime(futureTime)}</b>.</p>}</div>}
         {submitted && <p className="source-line">Źródło: modelowy plan zatok i zgłoszenia użytkowników. Nie ma czujników ani gwarancji dostępności.</p>}
       </section>}
     </div>}

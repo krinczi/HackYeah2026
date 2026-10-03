@@ -16,6 +16,7 @@ Otwórz `http://localhost:3000`. Inne urządzenie w tej samej sieci może otworz
 ## Co działa
 
 - Zgłoszenie dostawy, parkingu lub odbioru; filtr czasu, długości postoju, gabarytu i zamknięcia zatoki.
+- Mapa OpenStreetMap obok listy wyników pokazuje trzy punkty scenariusza. Po kliknięciu można dodać przybliżoną lokalizację użytkownika; aplikacja nie zapisuje jej na serwerze.
 - Brak obietnicy wolnego miejsca: przy braku pomiaru zajętość to `nieznana`.
 - Zapis niezaspokojonego popytu i odrzucanie zduplikowanych zgłoszeń.
 - Symulacja wariantu bez zmian i przyszłych zmian funkcji; wynik uwzględnia obsłużone i nieobsłużone zgłoszenia oraz koszt zmiany.
@@ -33,6 +34,7 @@ Otwórz `http://localhost:3000`. Inne urządzenie w tej samej sieci może otworz
 - Zgłoszenia zajętości w demo są deklaracjami użytkownika lub operatora, nie pomiarami fizycznymi. Rytm tygodniowego przeglądu w pilotażu jest propozycją produktu, nie automatyczną zmianą prawa ani faktem o Warszawie.
 - Dane utrwala lokalny plik. Do publicznego wdrożenia z wieloma instancjami potrzebna będzie współdzielona baza (planowane Supabase), autoryzacja operatora i osobne sesje jury.
 - Przybliżone odległości są częścią scenariusza, nie pomiarem tras pieszych.
+- Punkty A–C na mapie są orientacyjną wizualizacją modelu w rejonie ul. Świętokrzyskiej. Nie wskazują zweryfikowanych zatok ani aktualnego oznakowania; do rzeczywistego wdrożenia potrzebne są współrzędne potwierdzone przez zarządcę drogi. Podkład mapowy wymaga internetu.
 
 Źródło problemu miejskiego: [badanie ZDM Warszawa z 2018 r.](https://zdm.waw.pl/wp-content/uploads/2018/04/Raport_koncowy_Swietokrzyska_dostawy.pdf). Nie jest ono źródłem bieżącej zajętości.
 ## Folder JetBrains
