@@ -13,6 +13,7 @@ const SCENES: { id: DemoScene; title: string; note: string }[] = [
   { id: 'parking', title: 'Czy już wolne?', note: 'Kliknij „Miejsce zajęte” przy B — wynik od razu się zmieni.' },
   { id: 'delivery', title: 'Dwie dostawy', note: 'Zatwierdź proponowaną zmianę A, potem obejrzyj znak.' },
   { id: 'event', title: 'Po wydarzeniu', note: 'Zatwierdź C dla odbiorów po wydarzeniu.' },
+  { id: 'pickup', title: 'Wieczorny odbiór', note: 'Zobacz odbiór w wynikach, na mapie i w podglądzie znaku o 20:00.' },
 ];
 
 function nextMode(bay: Bay, at: number) {
@@ -20,7 +21,7 @@ function nextMode(bay: Bay, at: number) {
 }
 
 function nextPossible(state: AppState, input: SearchInput): number | null {
-  for (let time = input.arrival + 15; time <= Math.min(1300, input.arrival + 180); time += 15) {
+  for (let time = input.arrival + 15; time <= 1300; time += 15) {
     if (rankBays(state, { ...input, arrival: time }).length) return time;
   }
   return null;
@@ -30,8 +31,7 @@ function ModeBadge({ mode }: { mode: Mode | null }) {
   return <span className={`mode-badge ${mode ?? 'unknown'}`}>{mode ? MODE_LABEL[mode] : 'Poza planem'}</span>;
 }
 
-function BayRibbon({ bay, now }: { bay: Bay; now: number }) {
-  const hours = [10, 11, 12, 13, 14, 15, 16, 17, 18];
+function BayRibbon({ bay, now, hours }: { bay: Bay; now: number; hours: number[] }) {
   return <div className="ribbon-row">
     <div className="ribbon-name"><strong>{bay.id}</strong><span>{bay.closed ? 'Wyłączona' : bay.name}</span></div>
     <div className="ribbon-cells">
@@ -59,8 +59,10 @@ export default function Home() {
   const [eventTitle, setEventTitle] = useState('');
   const [eventPlaceLabel, setEventPlaceLabel] = useState('');
   const [eventLocation, setEventLocation] = useState<GeoPoint | null>(null);
-  const [eventEnd, setEventEnd] = useState(720);
+  const [eventStartAt, setEventStartAt] = useState('');
+  const [eventEndAt, setEventEndAt] = useState('');
   const [showEventForm, setShowEventForm] = useState(false);
+  const [signPreviewTime, setSignPreviewTime] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -72,7 +74,13 @@ export default function Home() {
   }, []);
 
   useEffect(() => { void refresh(); const timer = setInterval(() => void refresh(), 1500); return () => clearInterval(timer); }, [refresh]);
-  useEffect(() => { if (payload) setEventEnd(current => Math.max(current, Math.ceil((payload.state.now + 30) / 30) * 30)); }, [payload?.state.now]);
+  useEffect(() => {
+    if (!payload) return;
+    const { scenarioDate, now } = payload.state;
+    const end = Math.min(1320, Math.ceil((now + 60) / 30) * 30);
+    setEventStartAt(`${scenarioDate}T${formatTime(now)}`);
+    setEventEndAt(`${scenarioDate}T${formatTime(end)}`);
+  }, [payload?.state.scenarioDate, payload?.state.now]);
 
   const act = useCallback(async (action: Record<string, unknown>, success: string) => {
     setBusy(true); setNotice('');
@@ -105,10 +113,13 @@ export default function Home() {
     setActiveBayId(null);
     setActiveStopEnd(null);
     setSelectedBayId(null);
-    if (scene === 'parking') {
-      const search: SearchInput = { mode: 'parking', destination: 'shops', arrival: result.state.now, duration: 30, vehicle: 'car' };
+    if (scene === 'parking' || scene === 'pickup') {
+      const search: SearchInput = scene === 'pickup'
+        ? { mode: 'pickup', destination: 'stop', arrival: result.state.now, duration: 10, vehicle: 'car' }
+        : { mode: 'parking', destination: 'shops', arrival: result.state.now, duration: 30, vehicle: 'car' };
       setInput(search);
       setSubmitted(search);
+      setSignPreviewTime(null);
       setDriverStep('results');
       setTab('driver');
     } else {
@@ -131,8 +142,10 @@ export default function Home() {
   const demoIndex = demoScene ? SCENES.findIndex(scene => scene.id === demoScene) : -1;
 
   if (!state || !analysis) return <main className="loading">Ładowanie ulicy…</main>;
-  const activeEvents = state.events.filter(event => event.status === 'planned' && event.end >= state.now).sort((a, b) => a.end - b.end);
+  const activeEvents = state.events.filter(event => event.status === 'planned' && event.endAt.slice(0, 10) === state.scenarioDate && event.end >= state.now).sort((a, b) => a.end - b.end);
   const selectedPlan = analysis.variants.find(variant => variant.id === analysis.recommendedId)!;
+  const timelineHours = state.now >= 1080 || input.mode === 'pickup' ? [13, 14, 15, 16, 17, 18, 19, 20, 21] : [10, 11, 12, 13, 14, 15, 16, 17, 18];
+  const signTime = Math.max(signPreviewTime ?? state.now, state.now);
 
   return <main className="shell">
     <header className="topbar">
@@ -145,21 +158,21 @@ export default function Home() {
       <button className={tab !== 'driver' ? 'active' : ''} onClick={() => setTab('city')}>Dla miasta</button>
     </nav>
     {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Zamknij komunikat">×</button></div>}
-    {demoScene && <section className="demo-tour" aria-label="Pokaz aplikacji"><div><span>DEMO {demoIndex + 1}/3 · ŚWIĘTOKRZYSKA</span><p>{SCENES[demoIndex].note} <a href="https://zdm.waw.pl/wp-content/uploads/2018/04/Raport_koncowy_Swietokrzyska_dostawy.pdf" target="_blank" rel="noopener noreferrer">Badanie ZDM 2018</a></p></div><button className="demo-tour-next" type="button" disabled={busy} onClick={() => demoIndex === SCENES.length - 1 ? void finishDemo() : void openScene(SCENES[demoIndex + 1].id)}>{demoIndex === SCENES.length - 1 ? 'Zakończ demo' : `Dalej: ${SCENES[demoIndex + 1].title}`}</button><button className="demo-tour-close" type="button" disabled={busy} onClick={() => void finishDemo()} aria-label="Zamknij demo">×</button></section>}
+    {demoScene && <section className="demo-tour" aria-label="Pokaz aplikacji"><div><span>DEMO {demoIndex + 1}/{SCENES.length} · ŚWIĘTOKRZYSKA</span><p>{SCENES[demoIndex].note} <a href="https://zdm.waw.pl/wp-content/uploads/2018/04/Raport_koncowy_Swietokrzyska_dostawy.pdf" target="_blank" rel="noopener noreferrer">Badanie ZDM 2018</a></p></div>{demoScene === 'pickup' && <button className="demo-tour-next" type="button" onClick={() => setTab('sign')}>Zobacz znak</button>}<button className="demo-tour-next" type="button" disabled={busy} onClick={() => demoIndex === SCENES.length - 1 ? void finishDemo() : void openScene(SCENES[demoIndex + 1].id)}>{demoIndex === SCENES.length - 1 ? 'Zakończ demo' : `Dalej: ${SCENES[demoIndex + 1].title}`}</button><button className="demo-tour-close" type="button" disabled={busy} onClick={() => void finishDemo()} aria-label="Zamknij demo">×</button></section>}
 
     {tab === 'driver' && <>
       {driverStep === 'intent' && <section className="intro simple-intro"><p className="eyebrow">JEDNA ZATOKA. RÓŻNE POTRZEBY.</p><h1>Gdzie chcesz<br/><em>się zatrzymać?</em></h1><p className="lede">Wybierz powód postoju. W następnym kroku podasz godzinę i zobaczysz, co wolno.</p></section>}
       {driverStep === 'intent' && <section className="intent-entry"><div className="section-heading"><span>KROK 1 Z 2</span><h2>Po co przyjeżdżasz?</h2></div><div className="intent-grid">
-        {(['delivery', 'parking', 'pickup'] as Mode[]).map((mode, index) => <button key={mode} className={`intent-card ${mode}`} onClick={() => { setDemoScene(null); setInput({ ...input, mode, arrival: Math.max(input.arrival, state.now), duration: mode === 'pickup' ? 10 : mode === 'delivery' ? 15 : 30, vehicle: mode === 'delivery' ? 'van' : 'car' }); setSubmitted(null); setSelectedBayId(null); setDriverStep('details'); }}><span>0{index + 1} / {MODE_LABEL[mode].toUpperCase()}</span><strong>{mode === 'delivery' ? 'Dostarczam towar' : mode === 'parking' ? 'Chcę zaparkować' : 'Odbieram kogoś'}</strong><small>{mode === 'delivery' ? 'Krótki rozładunek blisko celu' : mode === 'parking' ? 'Postój na określony czas' : 'Szybkie zatrzymanie przy ulicy'}</small></button>)}
+        {(['delivery', 'parking', 'pickup'] as Mode[]).map((mode, index) => <button key={mode} className={`intent-card ${mode}`} onClick={() => { setDemoScene(null); setInput({ ...input, mode, destination: mode === 'pickup' ? 'stop' : mode === 'delivery' ? 'shops' : input.destination, arrival: mode === 'pickup' ? Math.max(1080, state.now) : Math.max(input.arrival, state.now), duration: mode === 'pickup' ? 10 : mode === 'delivery' ? 15 : 30, vehicle: mode === 'delivery' ? 'van' : 'car' }); setSubmitted(null); setSelectedBayId(null); setDriverStep('details'); }}><span>0{index + 1} / {MODE_LABEL[mode].toUpperCase()}</span><strong>{mode === 'delivery' ? 'Dostarczam towar' : mode === 'parking' ? 'Chcę zaparkować' : 'Odbieram kogoś'}</strong><small>{mode === 'delivery' ? 'Krótki rozładunek blisko celu' : mode === 'parking' ? 'Postój na określony czas' : 'Szybkie zatrzymanie przy ulicy'}</small></button>)}
       </div><p className="intent-note">Pokazujemy, czy postój jest dozwolony. Wolne miejsce potwierdzimy tylko wtedy, gdy będziemy mieć pomiar.</p></section>}
       {driverStep !== 'intent' && <div className={`driver-layout focused ${driverStep === 'details' ? 'form-step' : 'result-step'}`}>
       {driverStep === 'details' && <section className="form-panel"><div className="section-heading"><span>KROK 2 Z 2 · {MODE_LABEL[input.mode].toUpperCase()}</span><h2>Kiedy i gdzie?</h2></div><button className="back-link" onClick={() => setDriverStep('intent')}>Zmień cel postoju</button>
-        <div className="fields"><label>Cel podróży<select value={input.destination} onChange={e => setInput({ ...input, destination: e.target.value as Destination })}>{Object.entries(DEST_LABEL).map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select></label>
+        <div className="fields"><label>{input.mode === 'pickup' ? 'Skąd odbierasz?' : 'Cel podróży'}<select value={input.destination} onChange={e => setInput({ ...input, destination: e.target.value as Destination })}>{Object.entries(DEST_LABEL).map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select></label>
         <label>Przyjazd<select value={input.arrival} onChange={e => setInput({ ...input, arrival: Number(e.target.value) })}>{Array.from({ length: 45 }, (_, i) => 600 + i * 15).filter(minute => minute >= state.now && minute <= 1300).map(minute => <option key={minute} value={minute}>{formatTime(minute)}</option>)}</select></label>
         <label>Czas postoju<select value={input.duration} onChange={e => setInput({ ...input, duration: Number(e.target.value) })}>{[10, 15, 20, 30, 45, 60, 90, 120].filter(n => n <= MAX_DURATION[input.mode]).map(n => <option key={n} value={n}>{n} min</option>)}</select></label>
         {input.mode === 'delivery' && <label>Pojazd<select value={input.vehicle} onChange={e => setInput({ ...input, vehicle: e.target.value as Vehicle })}><option value="van">Dostawczy</option><option value="car">Osobowy</option></select></label>}</div>
         <button className="primary" disabled={busy} onClick={async () => { const result = await act({ type: 'request', ...input }, ''); if (result) { setSubmitted({ ...input }); setSelectedBayId(null); setDriverStep('results'); } }}>Pokaż pasujące zatoki</button>
-        <p className="fineprint">Zgłoszenie pokazuje popyt, ale nie rezerwuje miejsca. Po potwierdzeniu przyjazdu czas postoju pomoże oszacować, kiedy zatoka może się zwolnić.</p>
+        <p className="fineprint">{input.mode === 'pickup' ? 'Odbiór trwa maksymalnie 15 minut. Zgłoszenie pokazuje popyt, ale nie rezerwuje miejsca.' : 'Zgłoszenie pokazuje popyt, ale nie rezerwuje miejsca. Po potwierdzeniu przyjazdu czas postoju pomoże oszacować, kiedy zatoka może się zwolnić.'}</p>
       </section>}
       {driverStep === 'results' && <section className="result-panel"><div className="section-heading"><span>WYNIK / {submitted ? formatTime(submitted.arrival) : 'TWÓJ POSTÓJ'}</span><h2>{activeBayId ? 'Twój postój' : submitted ? matches.length ? 'Tu wolno się zatrzymać' : 'Brak pasującej zatoki' : 'Zacznij nowe szukanie'}</h2></div><button className="back-link" onClick={() => { setSubmitted(null); setSelectedBayId(null); setDriverStep('details'); }}>Zmień godzinę lub miejsce</button>
         {activeBayId && <div className="active-stop"><span>TWÓJ POSTÓJ · ZATOKA {activeBayId}</span><strong>Przyjazd zgłoszony</strong><p>Deklarowany koniec postoju: {activeStopEnd === null ? 'nieznany' : formatTime(activeStopEnd)}. To szacunek, nie pomiar czujnika. Zgłoś odjazd, gdy rzeczywiście wyjedziesz.</p><button disabled={busy} onClick={async () => { if (await act({ type: 'observation', bayId: activeBayId, kind: 'departed' }, 'Odjazd zapisany. Wolne miejsce nie jest potwierdzone.')) { setActiveBayId(null); setActiveStopEnd(null); } }}>Odjeżdżam</button></div>}
@@ -215,16 +228,16 @@ export default function Home() {
         {state.decisions.length > 0 && <div className="decision-log"><span>ZATWIERDZONE Z WYPRZEDZENIEM · DEMO</span>{state.decisions.slice(-3).reverse().map(decision => <p key={decision.id}><b>Zatoka {decision.bayId}</b> · {MODE_LABEL[decision.mode]} {formatTime(decision.start)}–{formatTime(decision.end)}<small>Zatwierdzono w scenariuszu o {formatTime(decision.scenarioMinute)}</small></p>)}</div>}
       </section>
       <section className="timeline-panel"><div className="section-heading compact"><span>ODCINEK / SCENARIUSZ</span><h2>Rytm ulicy</h2><p>Godzina scenariusza: <b>{formatTime(state.now)}</b>. Zatoki i odległości są demonstracyjne.</p></div>
-        <div className="timeline-hours"><span aria-hidden="true"></span><div className="timeline-hour-labels">{[10, 11, 12, 13, 14, 15, 16, 17, 18].map(h => <span key={h}>{h}:00</span>)}</div></div>
-        <div className="ribbon">{state.bays.map(bay => <BayRibbon key={bay.id} bay={bay} now={state.now} />)}</div>
+        <div className="timeline-hours"><span aria-hidden="true"></span><div className="timeline-hour-labels">{timelineHours.map(h => <span key={h}>{h}:00</span>)}</div></div>
+        <div className="ribbon">{state.bays.map(bay => <BayRibbon key={bay.id} bay={bay} now={state.now} hours={timelineHours} />)}</div>
         <div className="legend"><span><i className="dot delivery"/>Dostawa</span><span><i className="dot parking"/>Parking</span><span><i className="dot pickup"/>Odbiór</span><span><i className="dot unknown"/>Wyłączona</span></div>
-        <div className="demand-strip"><div><small>ZGŁOSZENIA</small><strong>{state.requests.length}</strong></div><div><small>DOSTAWY BEZ MIEJSCA</small><strong>{analysis.variants.find(v => v.id === 'keep')?.unmet.delivery ?? 0}</strong></div><div><small>PARKING BEZ MIEJSCA</small><strong>{analysis.variants.find(v => v.id === 'keep')?.unmet.parking ?? 0}</strong></div></div>
+        <div className="demand-strip"><div><small>ZGŁOSZENIA</small><strong>{state.requests.length}</strong></div><div><small>DOSTAWY BEZ MIEJSCA</small><strong>{analysis.variants.find(v => v.id === 'keep')?.unmet.delivery ?? 0}</strong></div><div><small>PARKING BEZ MIEJSCA</small><strong>{analysis.variants.find(v => v.id === 'keep')?.unmet.parking ?? 0}</strong></div><div><small>ODBIORY BEZ MIEJSCA</small><strong>{analysis.variants.find(v => v.id === 'keep')?.unmet.pickup ?? 0}</strong></div></div>
         <div className="evidence-panel"><span>DANE Z ULICY / DEMO</span><strong>{state.observations.length} zgłoszeń zajętości</strong><p>{state.observations.length ? `Ostatnie: zatoka ${state.observations.at(-1)!.bayId}, ${state.observations.at(-1)!.kind === 'departed' ? 'odjazd' : 'zajęcie'} o ${formatTime(state.observations.at(-1)!.scenarioMinute)}. To deklaracja, nie czujnik.` : 'Brak obserwacji. Zgłoszenia potrzeb służą prognozie, nie potwierdzają wolnego miejsca.'}</p></div>
       </section>
-      <section className="events-panel" id="wydarzenia"><div className="events-heading"><div><span>SYGNAŁ DLA PROGNOZY</span><h2>Wydarzenia w okolicy</h2><p>Wskaż dokładny punkt na mapie i godzinę końca w dniu scenariusza. System sprawdzi, które modelowe zatoki są blisko.</p></div><button type="button" onClick={() => setShowEventForm(open => !open)}>{showEventForm ? 'Zamknij formularz' : '+ Dodaj wydarzenie'}</button></div>
-        {activeEvents.length > 0 ? <div className="event-list">{activeEvents.map(event => <article key={event.id} className="event-item"><div><span>{formatTime(event.end)} · {event.source === 'demo' ? 'scenariusz demo' : 'wpis operatora'}</span><strong>{event.title}</strong><small>{event.placeLabel} · najbliżej modelowej zatoki {nearestDemoBay(event.location).id}</small></div><button type="button" disabled={busy} onClick={() => void act({ type: 'event_cancel', id: event.id }, 'Wydarzenie odwołane. Prognoza została przeliczona.')}>Odwołaj</button></article>)}</div> : <p className="event-empty">Brak aktywnych wydarzeń w scenariuszu.</p>}
-        {showEventForm && <form className="event-form" onSubmit={async e => { e.preventDefault(); if (!eventLocation) return; if (await act({ type: 'event_add', title: eventTitle, placeLabel: eventPlaceLabel, end: eventEnd, lat: eventLocation.lat, lng: eventLocation.lng }, 'Wydarzenie dodane. Rekomendacja została przeliczona.')) { setEventTitle(''); setEventPlaceLabel(''); setEventLocation(null); setShowEventForm(false); } }}><div className="event-form-fields"><label>Nazwa wydarzenia<input value={eventTitle} onChange={e => setEventTitle(e.target.value)} minLength={3} maxLength={60} placeholder="np. koncert" required /></label><label>Nazwa miejsca / adres<input value={eventPlaceLabel} onChange={e => setEventPlaceLabel(e.target.value)} minLength={3} maxLength={80} placeholder="np. wejście od Świętokrzyskiej" required /></label><label>Przewidywany koniec<select value={eventEnd} onChange={e => setEventEnd(Number(e.target.value))}>{Array.from({ length: 25 }, (_, i) => 600 + i * 30).filter(minute => minute >= state.now + 30).map(minute => <option key={minute} value={minute}>{formatTime(minute)}</option>)}</select></label></div><EventLocationPicker value={eventLocation} onChange={setEventLocation} /><div className="event-form-bottom"><p>Adres jest opisem operatora; punkt wybierasz na mapie. Prognoza korzysta z odległości do modelowych zatok i nie zmienia planu bez zatwierdzenia.</p><button type="submit" disabled={busy || !eventLocation}>Dodaj i przelicz <span>↗</span></button></div></form>}
-        <p className="event-provenance">W tym prototypie wydarzenia są dodawane ręcznie. Nie korzystamy jeszcze z miejskiego API wydarzeń.</p>
+      <section className="events-panel" id="wydarzenia"><div className="events-heading"><div><span>SYGNAŁ DLA PROGNOZY · {state.scenarioDate}</span><h2>Wydarzenia w okolicy</h2><p>Podaj początek i koniec oraz wskaż miejsce na mapie. Prognoza odbiorów korzysta z godziny zakończenia.</p></div><button type="button" onClick={() => setShowEventForm(open => !open)}>{showEventForm ? 'Zamknij formularz' : '+ Dodaj wydarzenie'}</button></div>
+        {activeEvents.length > 0 ? <div className="event-list">{activeEvents.map(event => <article key={event.id} className="event-item"><div><span>{event.startAt ? event.startAt.replace('T', ' ') : 'Początek niepodany'} – {event.endAt.replace('T', ' ')} · {event.source === 'demo' ? 'scenariusz demo' : 'wpis operatora'}</span><strong>{event.title}</strong><small>{event.placeLabel} · najbliżej modelowej zatoki {nearestDemoBay(event.location).id}</small></div><button type="button" disabled={busy} onClick={() => void act({ type: 'event_cancel', id: event.id }, 'Wydarzenie odwołane. Prognoza została przeliczona.')}>Odwołaj</button></article>)}</div> : <p className="event-empty">Brak aktywnych wydarzeń w scenariuszu.</p>}
+        {showEventForm && <form className="event-form" onSubmit={async e => { e.preventDefault(); if (!eventLocation) return; if (await act({ type: 'event_add', title: eventTitle, placeLabel: eventPlaceLabel, startAt: eventStartAt, endAt: eventEndAt, lat: eventLocation.lat, lng: eventLocation.lng }, 'Wydarzenie dodane. Rekomendacja została przeliczona.')) { setEventTitle(''); setEventPlaceLabel(''); setEventLocation(null); setShowEventForm(false); } }}><div className="event-form-fields"><label>Nazwa wydarzenia<input value={eventTitle} onChange={e => setEventTitle(e.target.value)} minLength={3} maxLength={60} placeholder="np. koncert" required /></label><label>Nazwa miejsca / adres<input value={eventPlaceLabel} onChange={e => setEventPlaceLabel(e.target.value)} minLength={3} maxLength={80} placeholder="np. wejście od Świętokrzyskiej" required /></label><label>Rozpoczęcie<input type="datetime-local" value={eventStartAt} max={eventEndAt || undefined} onChange={e => setEventStartAt(e.target.value)} required /></label><label>Zakończenie<input type="datetime-local" value={eventEndAt} min={`${state.scenarioDate}T${formatTime(state.now + 30)}`} max={`${state.scenarioDate}T22:00`} onChange={e => setEventEndAt(e.target.value)} required /></label></div><EventLocationPicker value={eventLocation} onChange={setEventLocation} /><div className="event-form-bottom"><p>Wydarzenie może zacząć się wcześniej, także poprzedniego dnia. Koniec musi przypadać w dniu scenariusza ({state.scenarioDate}), który analizuje demo. Zmiana planu wymaga zatwierdzenia.</p><button type="submit" disabled={busy || !eventLocation}>Dodaj i przelicz <span>↗</span></button></div></form>}
+        <p className="event-provenance">Wydarzenia są dodawane ręcznie. Nie korzystamy jeszcze z miejskiego API wydarzeń.</p>
       </section>
       <details className="controls-panel"><summary>Zamknięcia zatok <span>{state.bays.filter(bay => bay.closed).length} wyłączonych</span></summary>
         <p className="controls-intro">Gdy zatoka jest wyłączona z użytku, miasto usuwa ją z wyników i przelicza przyszły plan. To nie jest informacja o tym, czy ktoś w niej stoi.</p>
@@ -233,7 +246,7 @@ export default function Home() {
       </details>
     </div>}
 
-    {tab === 'sign' && <section className="sign-layout"><button className="back-link sign-back" onClick={() => setTab('city')}>Panel miasta</button><div className="section-heading"><span>WIDOK ULICY / MAKIETA</span><h2>Jedna informacja na każdym ekranie.</h2><p>Cyfrowy podgląd funkcji zatoki. Nie jest zatwierdzonym oznakowaniem drogowym.</p></div><div className="sign-grid">{state.bays.map(bay => { const mode = modeAt(bay, state.now); const next = nextMode(bay, state.now); return <article key={bay.id} className="street-sign"><div className="sign-top"><span>TU WOLNO?</span><b>{bay.id}</b></div><div className={`sign-main ${bay.closed ? 'unknown' : mode ?? 'unknown'}`}><small>{bay.closed ? 'NIEDOSTĘPNA' : 'TERAZ'}</small><strong>{bay.closed ? 'WYŁĄCZONA' : mode ? MODE_LABEL[mode].toUpperCase() : 'BRAK PLANU'}</strong></div><div className="sign-bottom"><span>{next ? `OD ${formatTime(next.start)}` : 'DALEJ'}</span><b>{next ? MODE_LABEL[next.mode].toUpperCase() : 'BRAK ZMIANY'}</b></div></article>; })}</div>{state.lastDecision && <p className="last-decision">Ostatnia decyzja: {state.lastDecision}</p>}<p className="fineprint">Plan w tym widoku pochodzi z demonstracyjnej decyzji operatora. Na prawdziwej ulicy musi odpowiadać zatwierdzonej organizacji ruchu i oznakowaniu.</p></section>}
+    {tab === 'sign' && <section className="sign-layout"><button className="back-link sign-back" onClick={() => setTab('city')}>Panel miasta</button><div className="section-heading"><span>WIDOK ULICY / MAKIETA</span><h2>Jedna informacja na każdym ekranie.</h2><p>Cyfrowy podgląd funkcji zatoki. Nie jest zatwierdzonym oznakowaniem drogowym.</p></div><label className="sign-time">Godzina podglądu<select value={signTime} onChange={e => setSignPreviewTime(Number(e.target.value) === state.now ? null : Number(e.target.value))}>{[state.now, 1080, 1200].filter((minute, index, all) => minute >= state.now && all.indexOf(minute) === index).map(minute => <option key={minute} value={minute}>{formatTime(minute)}{minute === state.now ? ' · teraz' : ' · podgląd'}</option>)}</select></label><div className="sign-grid">{state.bays.map(bay => { const mode = modeAt(bay, signTime); const next = nextMode(bay, signTime); const current = bay.slots.find(slot => slot.start <= signTime && signTime < slot.end); return <article key={bay.id} className="street-sign"><div className="sign-top"><span>TU WOLNO?</span><b>{bay.id}</b></div><div className={`sign-main ${bay.closed ? 'unknown' : mode ?? 'unknown'}`}><small>{bay.closed ? 'NIEDOSTĘPNA' : signTime === state.now ? 'TERAZ' : `PODGLĄD ${formatTime(signTime)}`}</small><strong>{bay.closed ? 'WYŁĄCZONA' : mode ? MODE_LABEL[mode].toUpperCase() : 'BRAK PLANU'}</strong></div><div className="sign-bottom"><span>{next ? `OD ${formatTime(next.start)}` : current ? `DO ${formatTime(current.end)}` : 'DALEJ'}</span><b>{next ? MODE_LABEL[next.mode].toUpperCase() : 'KONIEC PLANU'}</b></div></article>; })}</div>{state.lastDecision && <p className="last-decision">Ostatnia decyzja: {state.lastDecision}</p>}<p className="fineprint">Podgląd przyszłej godziny nie oznacza, że funkcja obowiązuje już teraz. W realnym mieście plan musi odpowiadać zatwierdzonej organizacji ruchu i oznakowaniu.</p></section>}
 
     <footer><span>TuWolno? · prototyp konkursowy</span><span>Źródła i ograniczenia danych są jawne. Model zatok nie opisuje obecnego oznakowania Warszawy.</span></footer>
   </main>;

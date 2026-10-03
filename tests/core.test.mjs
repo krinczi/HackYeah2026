@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyze, applyVariant, availabilityHint, DEMO_BAY_POINTS, distanceMeters, eventForecast, initialState, modeAt, mutate, nearestDemoBay, occupancyEvidence, occupancyStatus, rankBays } from '../lib/core.ts';
+import { analyze, applyVariant, availabilityHint, DEMO_BAY_POINTS, distanceMeters, eventForecast, formatTime, initialState, modeAt, mutate, nearestDemoBay, occupancyEvidence, occupancyStatus, rankBays } from '../lib/core.ts';
 
-const eventAction = (title, end, bayId = 'C') => ({ type: 'event_add', title, placeLabel: `Punkt przy zatoce ${bayId}`, end, lat: DEMO_BAY_POINTS[bayId].lat, lng: DEMO_BAY_POINTS[bayId].lng });
+const eventAction = (title, end, bayId = 'C') => {
+  const day = initialState().scenarioDate;
+  return { type: 'event_add', title, placeLabel: `Punkt przy zatoce ${bayId}`, startAt: `${day}T${formatTime(end - 120)}`, endAt: `${day}T${formatTime(end)}`, lat: DEMO_BAY_POINTS[bayId].lat, lng: DEMO_BAY_POINTS[bayId].lng };
+};
 
 test('pojedyncza potrzeba nie przełącza planu; kolejna zmienia rekomendację na przyszłość', () => {
   let state = initialState();
@@ -148,15 +151,47 @@ test('scenariusze dostaw i wydarzenia prowadzą do różnych decyzji miasta', ()
   assert.equal(event.events[0].source, 'demo');
 });
 
+test('ta sama zatoka dopuszcza wieczorny odbiór, ale nie postój przez zmianę funkcji', () => {
+  const state = initialState();
+  const bay = state.bays[0];
+  assert.equal(modeAt(bay, 1079), 'parking');
+  assert.equal(modeAt(bay, 1080), 'pickup');
+  assert.equal(rankBays(state, { mode: 'pickup', destination: 'stop', arrival: 1080, duration: 10, vehicle: 'car' })[0].bay.id, 'A');
+  assert.equal(rankBays(state, { mode: 'parking', destination: 'shops', arrival: 1070, duration: 30, vehicle: 'car' }).some(match => match.bay.id === 'A'), false);
+  assert.equal(rankBays(state, { mode: 'pickup', destination: 'stop', arrival: 1070, duration: 10, vehicle: 'car' }).length, 0);
+});
+
+test('wieczorny scenariusz odbioru pokazuje zatokę C i obowiązujący znak', () => {
+  const state = mutate(initialState(), { type: 'scene', scene: 'pickup' });
+  const matches = rankBays(state, { mode: 'pickup', destination: 'stop', arrival: state.now, duration: 10, vehicle: 'car' });
+  assert.equal(state.now, 1200);
+  assert.equal(state.decisions[0].mode, 'pickup');
+  assert.equal(matches[0].bay.id, 'C');
+  assert.equal(modeAt(state.bays[2], state.now), 'pickup');
+  assert.equal(modeAt(state.bays[2], 1260), 'parking');
+});
+
 test('wydarzenie można dodać i odwołać, a prognoza nie udaje zgłoszeń', () => {
   let state = mutate(initialState(), eventAction('Koncert przy przystanku', 960));
   assert.equal(state.events.length, 1);
+  assert.equal(state.events[0].startAt, `${state.scenarioDate}T14:00`);
+  assert.equal(state.events[0].endAt, `${state.scenarioDate}T16:00`);
   assert.equal(analyze(state).recommendedId, 'keep');
   const id = state.events[0].id;
   state = mutate(state, { type: 'event_cancel', id });
   assert.equal(state.events[0].status, 'cancelled');
   assert.equal(analyze(state).signals.forecasts, 0);
   assert.throws(() => mutate(state, { type: 'event_cancel', id }), /aktywnego/);
+});
+
+test('początek może przypadać poprzedniego dnia, ale koniec musi być w dniu scenariusza i po początku', () => {
+  const state = initialState();
+  const previousDay = new Date(Date.parse(`${state.scenarioDate}T12:00:00Z`) - 86400000).toISOString().slice(0, 10);
+  const overnight = mutate(state, { ...eventAction('Nocne wydarzenie', 720), startAt: `${previousDay}T23:00` });
+  assert.equal(overnight.events[0].startAt, `${previousDay}T23:00`);
+  assert.equal(eventForecast(overnight, 660, 780).length, 2);
+  assert.throws(() => mutate(state, { ...eventAction('Błędna kolejność', 720), startAt: `${state.scenarioDate}T13:00` }), /początek|koniec/i);
+  assert.throws(() => mutate(state, { ...eventAction('Inny dzień', 720), endAt: `${previousDay}T12:00` }), /dniu scenariusza/i);
 });
 
 test('późne wydarzenie wraz ze zgłoszeniem może wskazać przyszłe okno', () => {
@@ -185,5 +220,5 @@ test('punkt wydarzenia wpływa na najbliższą zatokę, a odległy punkt jest od
   state = mutate(state, { type: 'request', mode: 'pickup', destination: 'shops', arrival: 945, duration: 10, vehicle: 'car' });
   assert.equal(analyze(state).recommendedId, 'A-pickup');
   assert.equal(eventForecast(state, 900, 1020)[0].location.lat, point.lat);
-  assert.throws(() => mutate(initialState(), { type: 'event_add', title: 'Daleko', placeLabel: 'Poza odcinkiem', end: 960, lat: 52.22, lng: 21.01 }), /obszarze pilotażu/);
+  assert.throws(() => mutate(initialState(), { ...eventAction('Daleko', 960), placeLabel: 'Poza odcinkiem', lat: 52.22, lng: 21.01 }), /obszarze pilotażu/);
 });

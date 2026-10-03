@@ -1,5 +1,5 @@
 export type Mode = 'delivery' | 'parking' | 'pickup';
-export type DemoScene = 'parking' | 'delivery' | 'event';
+export type DemoScene = 'parking' | 'delivery' | 'event' | 'pickup';
 export type Destination = 'shops' | 'food' | 'stop';
 export type Vehicle = 'car' | 'van';
 export type GeoPoint = { lat: number; lng: number };
@@ -28,6 +28,8 @@ export type StopRequest = {
 export type CityEvent = {
   id: string;
   title: string;
+  startAt: string | null;
+  endAt: string;
   end: number;
   placeLabel: string;
   location: GeoPoint;
@@ -56,6 +58,7 @@ export type PlanDecision = {
 export type AppState = {
   revision: number;
   now: number;
+  scenarioDate: string;
   scene?: DemoScene | null;
   bays: Bay[];
   requests: StopRequest[];
@@ -118,14 +121,28 @@ export function formatTime(minute: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
+function todayInWarsaw(): string {
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Warsaw', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+  const part = (type: string) => parts.find(item => item.type === type)?.value ?? '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+function scenarioDateTime(value: unknown): { date: string; minute: number } | null {
+  if (typeof value !== 'string') return null;
+  const match = /^(\d{4}-\d{2}-\d{2})T([01]\d|2[0-3]):([0-5]\d)$/.exec(value);
+  if (!match || Number.isNaN(Date.parse(`${match[1]}T12:00:00Z`)) || new Date(`${match[1]}T12:00:00Z`).toISOString().slice(0, 10) !== match[1]) return null;
+  return { date: match[1], minute: Number(match[2]) * 60 + Number(match[3]) };
+}
+
 export function initialState(): AppState {
   const parking: Slot[] = [{ start: 600, end: 1320, mode: 'parking' }];
   return {
     revision: 1,
     now: 600,
+    scenarioDate: todayInWarsaw(),
     scene: null,
     bays: [
-      { id: 'A', name: 'Zatoka A', distance: { shops: 40, food: 120, stop: 150 }, van: true, closed: false, occupancy: 'unknown', occupancyAt: null, slots: [{ start: 600, end: 660, mode: 'delivery' }, { start: 660, end: 1320, mode: 'parking' }] },
+      { id: 'A', name: 'Zatoka A', distance: { shops: 40, food: 120, stop: 150 }, van: true, closed: false, occupancy: 'unknown', occupancyAt: null, slots: [{ start: 600, end: 660, mode: 'delivery' }, { start: 660, end: 1080, mode: 'parking' }, { start: 1080, end: 1320, mode: 'pickup' }] },
       { id: 'B', name: 'Zatoka B', distance: { shops: 80, food: 50, stop: 110 }, van: true, closed: false, occupancy: 'unknown', occupancyAt: null, slots: structuredClone(parking) },
       { id: 'C', name: 'Zatoka C', distance: { shops: 140, food: 80, stop: 35 }, van: false, closed: false, occupancy: 'unknown', occupancyAt: null, slots: structuredClone(parking) },
     ],
@@ -228,7 +245,7 @@ function overlay(slots: Slot[], start: number, end: number, mode: Mode): Slot[] 
 }
 
 export function eventForecast(state: AppState, start: number, end: number): StopRequest[] {
-  const candidates = state.events.filter(event => event.status === 'planned').flatMap(event =>
+  const candidates = state.events.filter(event => event.status === 'planned' && event.endAt.slice(0, 10) === state.scenarioDate).flatMap(event =>
     [event.end - 15, event.end + 10].map((arrival, n) => ({ id: `forecast-${event.id}-${n}`, mode: 'pickup' as const, destination: eventDestination(event.location), location: event.location, arrival, duration: 10, vehicle: 'car' as const, source: 'demo_seed' as const, createdAt: 'założenie demonstracyjne' }))
       .filter(request => request.arrival >= start && request.arrival < end && request.arrival + request.duration <= 1320)
       .filter(request => !state.requests.some(real => real.mode === 'pickup' && real.destination === request.destination && Math.abs(real.arrival - request.arrival) <= 12)))
@@ -353,8 +370,13 @@ export function mutate(state: AppState, action: Record<string, unknown>): AppSta
     }
     if (scene === 'event') {
       const pickups: StopRequest[] = [690, 715, 740].map((arrival, index) => ({ id: `scene-pickup-${index}`, mode: 'pickup', destination: 'stop', arrival, duration: 10, vehicle: 'car', source: 'demo_seed', createdAt: 'scenariusz' }));
-      const event: CityEvent = { id: 'scene-event', title: 'Koniec wydarzenia', placeLabel: 'Punkt przy modelowej zatoce C', location: DEMO_BAY_POINTS.C, end: 720, status: 'planned', source: 'demo', updatedAt: null };
+      const event: CityEvent = { id: 'scene-event', title: 'Koniec wydarzenia', startAt: `${seed.scenarioDate}T10:00`, endAt: `${seed.scenarioDate}T12:00`, placeLabel: 'Punkt przy modelowej zatoce C', location: DEMO_BAY_POINTS.C, end: 720, status: 'planned', source: 'demo', updatedAt: null };
       return { ...seed, scene, now: 630, requests: pickups, events: [event], revision: state.revision + 1 };
+    }
+    if (scene === 'pickup') {
+      const event: CityEvent = { id: 'scene-evening-event', title: 'Koniec wydarzenia', startAt: `${seed.scenarioDate}T18:00`, endAt: `${seed.scenarioDate}T20:00`, placeLabel: 'Punkt przy modelowej zatoce C', location: DEMO_BAY_POINTS.C, end: 1200, status: 'planned', source: 'demo', updatedAt: null };
+      const decision: PlanDecision = { id: 'scene-evening-pickup', bayId: 'C', mode: 'pickup', start: 1140, end: 1260, approvedAt: 'scenariusz', scenarioMinute: 1080 };
+      return { ...seed, scene, now: 1200, bays: seed.bays.map(bay => bay.id === 'C' ? { ...bay, slots: overlay(bay.slots, decision.start, decision.end, 'pickup') } : bay), decisions: [decision], events: [event], revision: state.revision + 1 };
     }
     throw new Error('Nieznany scenariusz.');
   }
@@ -376,12 +398,16 @@ export function mutate(state: AppState, action: Record<string, unknown>): AppSta
   if (action.type === 'event_add') {
     const title = String(action.title ?? '').trim();
     const placeLabel = String(action.placeLabel ?? '').trim();
-    const end = Number(action.end);
+    const startAt = String(action.startAt ?? '');
+    const endAt = String(action.endAt ?? '');
+    const startTime = scenarioDateTime(startAt);
+    const endTime = scenarioDateTime(endAt);
     const lat = Number(action.lat);
     const lng = Number(action.lng);
     const location = { lat, lng };
-    if (title.length < 3 || title.length > 60 || placeLabel.length < 3 || placeLabel.length > 80 || !Number.isInteger(end) || end < state.now + 30 || end > 1320 || !Number.isFinite(lat) || !Number.isFinite(lng) || nearestDemoBay(location).distance > EVENT_REACH_METERS) throw new Error('Podaj nazwę, miejsce na mapie i przyszłą godzinę zakończenia w obszarze pilotażu.');
-    const event: CityEvent = { id: crypto.randomUUID(), title, placeLabel, location: { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6 }, end, status: 'planned', source: 'operator_demo', updatedAt: new Date().toISOString() };
+    if (!startTime || !endTime || endTime.date !== state.scenarioDate || `${startAt}` >= `${endAt}` || endTime.minute < state.now + 30 || endTime.minute > 1320) throw new Error('Podaj poprawny początek i koniec. Koniec musi przypadać w dniu scenariusza, co najmniej 30 minut od teraz.');
+    if (title.length < 3 || title.length > 60 || placeLabel.length < 3 || placeLabel.length > 80 || !Number.isFinite(lat) || !Number.isFinite(lng) || nearestDemoBay(location).distance > EVENT_REACH_METERS) throw new Error('Podaj nazwę i miejsce wydarzenia w obszarze pilotażu.');
+    const event: CityEvent = { id: crypto.randomUUID(), title, placeLabel, startAt, endAt, location: { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6 }, end: endTime.minute, status: 'planned', source: 'operator_demo', updatedAt: new Date().toISOString() };
     return { ...state, events: [...state.events, event], revision: state.revision + 1 };
   }
   if (action.type === 'event_cancel') {
