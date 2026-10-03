@@ -7,7 +7,8 @@ let queue = Promise.resolve();
 
 async function load(): Promise<AppState> {
   try {
-    return JSON.parse(await readFile(statePath, 'utf8')) as AppState;
+    const state = JSON.parse(await readFile(statePath, 'utf8')) as AppState;
+    return { ...state, observations: state.observations ?? [], decisions: state.decisions ?? [] };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     return initialState();

@@ -21,7 +21,7 @@ Stan: 3 października 2026. Rejestr wymagań, założeń i decyzji projektowych.
 
 ## Ustalenia i kwestie otwarte
 
-1. **Geografia:** Kraków nie jest wymogiem. Wybór miasta/obszaru po 23:00 powinien wynikać z problemu, możliwości pozyskania danych i realnego pilotażu. Późniejsze przeniesienie rozwiązania do innych miast może być zaletą, jeśli nie rozmyje demonstracji.
+1. **Geografia:** Kraków nie jest wymogiem. Wybór miasta/obszaru powinien wynikać z problemu, możliwości pozyskania danych i realnego pilotażu. Późniejsze przeniesienie rozwiązania do innych miast może być zaletą, jeśli nie rozmyje demonstracji.
 2. **Dane:** dostępność historyczna, częstotliwość aktualizacji i prawdziwy strumień czasu rzeczywistego to trzy różne rzeczy. Każde twierdzenie o „realtime” wymaga potwierdzonego źródła, opóźnienia i zachowania po utracie danych.
 3. **Platforma zgłoszeń:** przekazany regulamin wskazuje HackTribe, a załączony brief Challenge Rocket. Przed wysyłką potwierdzić aktualne instrukcje organizatora/mentorów i aktywny formularz; nie zgadywać.
 4. **Dodatkowe zasady:** brief wskazuje, że partnerzy mogą wprowadzić dodatkowe reguły użycia AI i zasobów. Sprawdzić komunikaty konkursowe podczas wydarzenia.
@@ -36,3 +36,11 @@ Stan: 3 października 2026. Rejestr wymagań, założeń i decyzji projektowych.
 | Sposób interpretacji zapisu o 23:00 dla przygotowawczego researchu. | Według korekty użytkowniczki nie blokuje bieżącej pracy; znaczenie regulaminowe wymagałoby potwierdzenia organizatora. | Harmonogram wydarzenia lub organizator. |
 | Wybrany problem będzie miał wystarczająco aktualne, legalnie dostępne dane. | Niezweryfikowane; nie przyjmować jako faktu. | Test źródła danych po starcie zadania. |
 | Dane o zajętości P+R są dostępne przez stabilny publiczny API. | Niepotwierdzone: ZTP pokazuje na stronie dane z opóźnieniem około minuty, lecz sposobu integracji nie zweryfikowano. | Dokumentacja ZTP, warunki użycia i test techniczny przed implementacją. |
+
+## Ustalony rytm zmian funkcji zatoki
+
+- Algorytm może analizować zgłoszenia, historię i wydarzenia na bieżąco, ale pojedyncze zgłoszenie nie zmienia obowiązujących zasad.
+- Funkcja zatoki zmienia się o znanych z wyprzedzeniem godzinach według harmonogramu zatwierdzonego przez miasto, np. rano dostawy, później postój.
+- W pilotażu miasto może przeglądać i zatwierdzać nowy harmonogram raz w tygodniu; po ustabilizowaniu rozwiązania co 2–4 tygodnie. To propozycja produktu, nie wymóg prawny.
+- Na wydarzenia miasto może zatwierdzić plan na konkretny dzień i ogłosić go z wyprzedzeniem. Nie przewidujemy przełączania zasad co kilka minut.
+- Aplikacja informuje i rekomenduje; prawnie wiążące zasady wynikają z zatwierdzonej organizacji ruchu i właściwego oznakowania na ulicy. Symulowany znak w demo nie jest takim oznakowaniem.

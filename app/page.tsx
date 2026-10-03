@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { DEST_LABEL, formatTime, MAX_DURATION, MODE_LABEL, modeAt, occupancyStatus, rankBays, type Analysis, type AppState, type Bay, type Destination, type Mode, type Vehicle } from '@/lib/core';
+import { DEST_LABEL, formatTime, MAX_DURATION, MODE_LABEL, modeAt, occupancyEvidence, occupancyStatus, rankBays, type Analysis, type AppState, type Bay, type Destination, type Mode, type Vehicle } from '@/lib/core';
 
 type Payload = { state: AppState; analysis: Analysis };
 type Tab = 'driver' | 'city' | 'sign';
@@ -41,6 +41,7 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>('driver');
   const [input, setInput] = useState<SearchInput>({ mode: 'delivery', destination: 'shops', arrival: 690, duration: 15, vehicle: 'van' });
   const [submitted, setSubmitted] = useState<SearchInput | null>(null);
+  const [activeBayId, setActiveBayId] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [eventEnd, setEventEnd] = useState(720);
@@ -92,7 +93,7 @@ export default function Home() {
 
     <section className="intro">
       <div><p className="eyebrow">MIEJSCE ZMIENIA FUNKCJĘ. ZASADA JEST JASNA.</p><h1>Jedna zatoka.<br/><em>Różne potrzeby.</em></h1><p className="lede">Sprawdź, gdzie wolno Ci się zatrzymać. Zobacz, jak miasto może dostosować przyszłe godziny do rzeczywistego popytu.</p></div>
-      <div className="intro-sign"><span>TERAZ · {formatTime(state.now)}</span><strong>{MODE_LABEL[modeAt(state.bays[0], state.now) ?? 'parking'].toUpperCase()}</strong><small>Zatoka A · status zajętości: nieznany</small></div>
+      <div className="intro-sign"><span>TERAZ · {formatTime(state.now)}</span><strong>{MODE_LABEL[modeAt(state.bays[0], state.now) ?? 'parking'].toUpperCase()}</strong><small>Zatoka A · {occupancyStatus(state.bays[0], state.now) === 'unknown' ? 'zajętość nieznana' : 'zgłoszono zajęcie'}</small></div>
     </section>
 
     <nav className="tabs" aria-label="Widoki aplikacji">
@@ -113,10 +114,29 @@ export default function Home() {
         <p className="fineprint">Zgłoszenie pokazuje popyt; nie rezerwuje publicznego miejsca.</p>
       </section>
       <section className="result-panel"><div className="section-heading"><span>02 / WYNIK</span><h2>{submitted ? matches.length ? 'Tu możesz się zatrzymać' : 'Brak pasującej zatoki' : 'Wynik pojawi się tutaj'}</h2></div>
+        {activeBayId && <div className="active-stop"><span>TWÓJ POSTÓJ · ZATOKA {activeBayId}</span><strong>Przyjazd zgłoszony</strong><p>To zgłoszenie użytkownika, nie pomiar czujnika. Po wyjeździe oznaczymy zajętość jako nieznaną.</p><button disabled={busy} onClick={async () => { if (await act({ type: 'observation', bayId: activeBayId, kind: 'departed' }, 'Odjazd zapisany. Wolne miejsce nie jest potwierdzone.')) setActiveBayId(null); }}>Odjeżdżam →</button></div>}
         {!submitted && <div className="empty-state"><div className="empty-road"><span>A</span><span>B</span><span>C</span></div><p>Wybierz potrzebę i godzinę. Pokażemy zasady postoju oraz dojście do celu.</p></div>}
-        {submitted && matches.length > 0 && <><p className="result-lead">{MODE_LABEL[submitted.mode]} · {formatTime(submitted.arrival)} · {submitted.duration} min. Zgodność z <strong>modelem zasad</strong>, bez gwarancji wolnego miejsca.</p><div className="match-list">{matches.map(({ bay, distance, occupancy }) => <article className="match" key={bay.id}><div className="match-number">{bay.id}</div><div><h3>{bay.name}</h3><p>{distance} m do celu <span>·</span> zajętość: <strong>{occupancy === 'unknown' ? 'nieznana' : 'zgłoszono zajęcie'}</strong></p><div className="match-modes"><ModeBadge mode={modeAt(bay, submitted.arrival)} />{nextMode(bay, submitted.arrival) && <small>od {formatTime(nextMode(bay, submitted.arrival)!.start)}: {MODE_LABEL[nextMode(bay, submitted.arrival)!.mode]}</small>}</div></div></article>)}</div></>}
+        {submitted && matches.length > 0 && <>
+          <p className="result-lead">{MODE_LABEL[submitted.mode]} · {formatTime(submitted.arrival)} · {submitted.duration} min. Zgodność z <strong>modelem zasad</strong>, bez gwarancji wolnego miejsca.</p>
+          <div className="match-list">{matches.map(({ bay, distance, occupancy }) =>
+            <article className="match" key={bay.id}>
+              <div className="match-number">{bay.id}</div>
+              <div className="match-body">
+                <h3>{bay.name}</h3>
+                <p>{distance} m do celu <span>·</span> zajętość: <strong>{occupancy === 'unknown' ? 'nieznana' : 'zgłoszono zajęcie'}</strong></p>
+                <div className="match-modes"><ModeBadge mode={modeAt(bay, submitted.arrival)} />{nextMode(bay, submitted.arrival) && <small>od {formatTime(nextMode(bay, submitted.arrival)!.start)}: {MODE_LABEL[nextMode(bay, submitted.arrival)!.mode]}</small>}</div>
+                <p className="evidence-line">{occupancyEvidence(state, bay)}</p>
+                <div className="match-actions">
+                  <button disabled={busy || activeBayId !== null || Math.abs(submitted.arrival - state.now) > 15} onClick={async () => { if (await act({ type: 'observation', bayId: bay.id, kind: 'arrived', arrival: submitted.arrival }, `Przyjazd do zatoki ${bay.id} zapisany.`)) { setActiveBayId(bay.id); setSubmitted(null); } }}>Zgłoś przyjazd</button>
+                  <button disabled={busy || Math.abs(submitted.arrival - state.now) > 15} onClick={() => void act({ type: 'observation', bayId: bay.id, kind: 'occupied', arrival: submitted.arrival }, 'Dziękujemy. Szukamy innej zatoki.')}>Miejsce zajęte</button>
+                </div>
+                {Math.abs(submitted.arrival - state.now) > 15 && <p className="evidence-line">Zajętość zgłosisz w ciągu 15 min od planowanego przyjazdu.</p>}
+              </div>
+            </article>
+          )}</div>
+        </>}
         {submitted && matches.length === 0 && <div className="no-match"><strong>Nie kierujemy Cię do miejsca, w którym postój byłby niedozwolony.</strong><p>Twoja nieobsłużona potrzeba trafiła do porównania przyszłych planów.</p>{futureTime && <p>Najbliższy pasujący termin w tym modelu: <b>{formatTime(futureTime)}</b>.</p>}</div>}
-        {submitted && <p className="source-line">Źródło: modelowe zasady trzech zatok i zgłoszenie użytkownika. Stan fizycznej zajętości nie jest mierzony.</p>}
+        {submitted && <p className="source-line">Źródło: modelowy plan zatok i zgłoszenia użytkowników. Nie ma czujników ani gwarancji dostępności.</p>}
       </section>
     </div>}
 
@@ -126,20 +146,30 @@ export default function Home() {
         <div className="ribbon">{state.bays.map(bay => <BayRibbon key={bay.id} bay={bay} now={state.now} />)}</div>
         <div className="legend"><span><i className="dot delivery"/>Dostawa</span><span><i className="dot parking"/>Parking</span><span><i className="dot pickup"/>Odbiór</span><span><i className="dot unknown"/>Wyłączona</span></div>
         <div className="demand-strip"><div><small>ZGŁOSZENIA</small><strong>{state.requests.length}</strong></div><div><small>DOSTAWY BEZ MIEJSCA</small><strong>{analysis.variants.find(v => v.id === 'keep')?.unmet.delivery ?? 0}</strong></div><div><small>PARKING BEZ MIEJSCA</small><strong>{analysis.variants.find(v => v.id === 'keep')?.unmet.parking ?? 0}</strong></div></div>
+        <div className="evidence-panel"><span>DANE Z ULICY / DEMO</span><strong>{state.observations.length} zgłoszeń zajętości</strong><p>{state.observations.length ? `Ostatnie: zatoka ${state.observations.at(-1)!.bayId}, ${state.observations.at(-1)!.kind === 'departed' ? 'odjazd' : 'zajęcie'} o ${formatTime(state.observations.at(-1)!.scenarioMinute)}. To deklaracja, nie czujnik.` : 'Brak obserwacji. Zgłoszenia potrzeb służą prognozie, nie potwierdzają wolnego miejsca.'}</p></div>
       </section>
       <section className="decision-panel"><div className="section-heading compact"><span>DECYZJA / {formatTime(analysis.start)}–{formatTime(analysis.end)}</span><h2>Co zmienić dalej?</h2><p>Prognoza demonstracyjna oparta na zgłoszeniach i sygnale wydarzenia. Pewność: <b>niska</b>.</p></div>
+        <div className="cadence-note"><strong>Algorytm liczy dziś. Miasto planuje z wyprzedzeniem.</strong><p>W pilotażu przegląd planu co tydzień, później co 2–4 tygodnie. Wydarzenia: osobny plan zatwierdzony wcześniej. Zmiana w demo dotyczy przyszłego okna, nigdy obecnego postoju.</p></div>
         <div className="recommendation"><span>REKOMENDACJA</span><strong>{analysis.recommendedId === 'keep' ? 'Zachowaj plan' : analysis.variants.find(v => v.id === analysis.recommendedId)?.reason}</strong><p>{analysis.explanation}</p></div>
         <div className="variant-list">{futureVariants.map(variant => <article className={`variant ${variant.id === analysis.recommendedId ? 'recommended' : ''}`} key={variant.id}><div className="variant-head"><h3>{variant.reason}</h3>{variant.id === analysis.recommendedId && <span>polecany</span>}</div><div className="variant-stats"><span><b>{variant.served.delivery}</b> dostaw</span><span><b>{variant.served.parking}</b> postojów</span><span><b>{variant.served.pickup}</b> odbiorów</span><span><b>{variant.unmet.delivery + variant.unmet.parking + variant.unmet.pickup}</b> bez miejsca</span></div><button disabled={busy} onClick={() => void act({ type: 'approve', id: variant.id }, `Zapisano plan: ${variant.reason}.`)}>Wybierz plan <span>→</span></button></article>)}</div>
         <p className="fineprint">Niższy wynik oznacza mniej niezaspokojonych potrzeb, z kosztem zmiany planu. To symulacja zgłoszeń, nie pomiar całej ulicy.</p>
+        {state.decisions.length > 0 && <div className="decision-log"><span>ZATWIERDZONE Z WYPRZEDZENIEM · DEMO</span>{state.decisions.slice(-3).reverse().map(decision => <p key={decision.id}><b>Zatoka {decision.bayId}</b> · {MODE_LABEL[decision.mode]} {formatTime(decision.start)}–{formatTime(decision.end)}<small>Zatwierdzono w scenariuszu o {formatTime(decision.scenarioMinute)}</small></p>)}</div>}
       </section>
       <section className="controls-panel"><div className="section-heading compact"><span>SYGNAŁY / KONTROLA</span><h2>Sprawdź sytuacje brzegowe</h2></div>
-        <div className="control-block"><h3>Wydarzenie w okolicy <span>DEMO</span></h3><p>Planowany koniec może podnieść prognozę odbiorów. Sam w sobie nie wystarcza do rekomendacji zmiany.</p><div className="control-fields"><label>Status<select value={eventStatus} onChange={e => setEventStatus(e.target.value as 'planned' | 'cancelled')}><option value="cancelled">Odwołane</option><option value="planned">Planowane</option></select></label><label>Koniec<select value={eventEnd} onChange={e => setEventEnd(Number(e.target.value))}>{[660, 690, 720, 750, 780, 810, 840, 900].filter(n => n >= state.now).map(n => <option key={n} value={n}>{formatTime(n)}</option>)}</select></label></div><label className="check"><input type="checkbox" checked={eventNearby} onChange={e => setEventNearby(e.target.checked)}/> W pobliżu zatok</label><button className="secondary" disabled={busy} onClick={() => void act({ type: 'event', status: eventStatus, end: eventEnd, nearby: eventNearby }, 'Zaktualizowano sygnał wydarzenia.')}>Przelicz wydarzenie</button></div>
-        <div className="control-block"><h3>Stan zatok <span>ZGŁOSZENIE</span></h3>{state.bays.map(bay => <div className="bay-control" key={bay.id}><strong>{bay.name}</strong><button disabled={busy} onClick={() => void act({ type: 'bay', bayId: bay.id, closed: bay.closed, occupancy: occupancyStatus(bay, state.now) === 'unknown' ? 'reported_occupied' : 'unknown' }, 'Zmieniono zgłoszony stan zatoki.')}>{occupancyStatus(bay, state.now) === 'unknown' ? 'Zgłoś zajęcie' : 'Usuń zgłoszenie'}</button><button disabled={busy} onClick={() => void act({ type: 'bay', bayId: bay.id, closed: !bay.closed, occupancy: bay.occupancy }, 'Zmieniono dostępność zatoki.')}>{bay.closed ? 'Włącz' : 'Wyłącz'}</button></div>)}</div>
+        <div className="control-block">
+          <h3>Wydarzenie w okolicy <span>DEMO</span></h3>
+          <p>Planowany koniec może podnieść prognozę odbiorów. Sam w sobie nie wystarcza do rekomendacji zmiany.</p>
+          <p className="event-source">{state.event.title} · źródło: scenariusz demonstracyjny · {state.event.updatedAt ? `zmieniono ${new Date(state.event.updatedAt).toLocaleString('pl-PL')}` : 'bez danych miejskich'}</p>
+          <div className="control-fields"><label>Status<select value={eventStatus} onChange={e => setEventStatus(e.target.value as 'planned' | 'cancelled')}><option value="cancelled">Odwołane</option><option value="planned">Planowane</option></select></label><label>Koniec<select value={eventEnd} onChange={e => setEventEnd(Number(e.target.value))}>{[660, 690, 720, 750, 780, 810, 840, 900].filter(n => n >= state.now).map(n => <option key={n} value={n}>{formatTime(n)}</option>)}</select></label></div>
+          <label className="check"><input type="checkbox" checked={eventNearby} onChange={e => setEventNearby(e.target.checked)}/> W pobliżu zatok</label>
+          <button className="secondary" disabled={busy} onClick={() => void act({ type: 'event', status: eventStatus, end: eventEnd, nearby: eventNearby }, 'Zaktualizowano sygnał wydarzenia.')}>Przelicz wydarzenie</button>
+        </div>
+        <div className="control-block"><h3>Stan zatok <span>ZGŁOSZENIE</span></h3>{state.bays.map(bay => <div className="bay-control" key={bay.id}><strong>{bay.name}</strong><button disabled={busy} onClick={() => void act({ type: 'bay', bayId: bay.id, closed: bay.closed, occupancy: occupancyStatus(bay, state.now) === 'unknown' ? 'reported_occupied' : 'unknown' }, 'Zmieniono zgłoszony stan zatoki.')}>{occupancyStatus(bay, state.now) === 'unknown' ? 'Zgłoś zajęcie' : 'Usuń zgłoszenie'}</button><button disabled={busy} onClick={() => void act({ type: 'bay', bayId: bay.id, closed: !bay.closed, occupancy: occupancyStatus(bay, state.now) }, 'Zmieniono dostępność zatoki.')}>{bay.closed ? 'Włącz' : 'Wyłącz'}</button></div>)}</div>
         <div className="control-footer"><button className="text-button" disabled={busy} onClick={() => void act({ type: 'advance', now: Math.min(1260, state.now + 30) }, 'Czas scenariusza przesunięty o 30 minut.')}>+30 min scenariusza</button><button className="text-button reset" disabled={busy} onClick={() => { setSubmitted(null); void act({ type: 'reset' }, 'Scenariusz przywrócony.'); }}>Reset scenariusza</button></div>
       </section>
     </div>}
 
-    {tab === 'sign' && <section className="sign-layout"><div className="section-heading"><span>WIDOK ULICY / MAKIETA</span><h2>Jedna informacja na każdym ekranie.</h2><p>Cyfrowy podgląd funkcji zatoki. Nie jest zatwierdzonym oznakowaniem drogowym.</p></div><div className="sign-grid">{state.bays.map(bay => { const mode = modeAt(bay, state.now); const next = nextMode(bay, state.now); return <article key={bay.id} className="street-sign"><div className="sign-top"><span>TU WOLNO?</span><b>{bay.id}</b></div><div className={`sign-main ${bay.closed ? 'unknown' : mode ?? 'unknown'}`}><small>{bay.closed ? 'NIEDOSTĘPNA' : 'TERAZ'}</small><strong>{bay.closed ? 'WYŁĄCZONA' : mode ? MODE_LABEL[mode].toUpperCase() : 'BRAK PLANU'}</strong></div><div className="sign-bottom"><span>{next ? `OD ${formatTime(next.start)}` : 'DALEJ'}</span><b>{next ? MODE_LABEL[next.mode].toUpperCase() : 'BRAK ZMIANY'}</b></div><p>Zajętość: {occupancyStatus(bay, state.now) === 'unknown' ? 'nieznana' : 'zgłoszono zajęcie'} · zasady demonstracyjne</p></article>; })}</div>{state.lastDecision && <p className="last-decision">Ostatnia decyzja: {state.lastDecision}</p>}</section>}
+    {tab === 'sign' && <section className="sign-layout"><div className="section-heading"><span>WIDOK ULICY / MAKIETA</span><h2>Jedna informacja na każdym ekranie.</h2><p>Cyfrowy podgląd funkcji zatoki. Nie jest zatwierdzonym oznakowaniem drogowym.</p></div><div className="sign-grid">{state.bays.map(bay => { const mode = modeAt(bay, state.now); const next = nextMode(bay, state.now); return <article key={bay.id} className="street-sign"><div className="sign-top"><span>TU WOLNO?</span><b>{bay.id}</b></div><div className={`sign-main ${bay.closed ? 'unknown' : mode ?? 'unknown'}`}><small>{bay.closed ? 'NIEDOSTĘPNA' : 'TERAZ'}</small><strong>{bay.closed ? 'WYŁĄCZONA' : mode ? MODE_LABEL[mode].toUpperCase() : 'BRAK PLANU'}</strong></div><div className="sign-bottom"><span>{next ? `OD ${formatTime(next.start)}` : 'DALEJ'}</span><b>{next ? MODE_LABEL[next.mode].toUpperCase() : 'BRAK ZMIANY'}</b></div><p>Zajętość: {occupancyStatus(bay, state.now) === 'unknown' ? 'nieznana' : 'zgłoszono zajęcie'} · zasady demonstracyjne</p><p className="sign-evidence">{occupancyEvidence(state, bay)}</p></article>; })}</div>{state.lastDecision && <p className="last-decision">Ostatnia decyzja: {state.lastDecision}</p>}<p className="fineprint">Plan w tym widoku pochodzi z demonstracyjnej decyzji operatora. Na prawdziwej ulicy musi odpowiadać zatwierdzonej organizacji ruchu i oznakowaniu.</p></section>}
 
     <footer><span>TuWolno? · prototyp konkursowy</span><span>Źródła i ograniczenia danych są jawne. Model zatok nie opisuje obecnego oznakowania Warszawy.</span></footer>
   </main>;

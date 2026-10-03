@@ -28,12 +28,32 @@ export type CityEvent = {
   nearby: boolean;
   status: 'planned' | 'cancelled';
   source: 'demo';
+  updatedAt?: string | null;
+};
+export type Observation = {
+  id: string;
+  bayId: string;
+  kind: 'arrived' | 'departed' | 'occupied';
+  source: 'user' | 'operator_demo';
+  scenarioMinute: number;
+  recordedAt: string;
+};
+export type PlanDecision = {
+  id: string;
+  bayId: string;
+  mode: Mode;
+  start: number;
+  end: number;
+  approvedAt: string;
+  scenarioMinute: number;
 };
 export type AppState = {
   revision: number;
   now: number;
   bays: Bay[];
   requests: StopRequest[];
+  observations: Observation[];
+  decisions: PlanDecision[];
   event: CityEvent;
   lastDecision: string | null;
 };
@@ -82,7 +102,9 @@ export function initialState(): AppState {
       { id: 'seed-p2', mode: 'parking', destination: 'food', arrival: 690, duration: 60, vehicle: 'car', source: 'demo_seed', createdAt: 'scenariusz' },
       { id: 'seed-p3', mode: 'parking', destination: 'stop', arrival: 690, duration: 60, vehicle: 'car', source: 'demo_seed', createdAt: 'scenariusz' },
     ],
-    event: { title: 'Wydarzenie przykładowe', end: 720, nearby: true, status: 'cancelled', source: 'demo' },
+    observations: [],
+    decisions: [],
+    event: { title: 'Wydarzenie przykładowe', end: 720, nearby: true, status: 'cancelled', source: 'demo', updatedAt: null },
     lastDecision: null,
   };
 }
@@ -110,6 +132,16 @@ function recentOccupied(bay: Bay, now: number, arrival: number): boolean {
 
 export function occupancyStatus(bay: Bay, now: number): Bay['occupancy'] {
   return bay.occupancy === 'reported_occupied' && bay.occupancyAt !== null && now - bay.occupancyAt <= 15 ? 'reported_occupied' : 'unknown';
+}
+
+export function occupancyEvidence(state: AppState, bay: Bay): string {
+  const observation = [...state.observations].reverse().find(item => item.bayId === bay.id);
+  if (!observation) return 'Brak pomiaru zajętości';
+  const age = state.now - observation.scenarioMinute;
+  const when = `o ${formatTime(observation.scenarioMinute)}`;
+  if (observation.kind === 'departed') return `${observation.source === 'user' ? 'Użytkownik zgłosił odjazd' : 'Operator demo usunął zgłoszenie zajęcia'} ${when}; wolne miejsce niepotwierdzone`;
+  if (age > 15) return `Zgłoszenie zajęcia ${when} jest nieaktualne`;
+  return `${observation.source === 'user' ? 'Użytkownik' : 'Operator demo'} zgłosił zajęcie ${when}`;
 }
 
 export function rankBays(state: AppState, input: Pick<StopRequest, 'mode' | 'destination' | 'arrival' | 'duration' | 'vehicle'>): Match[] {
@@ -213,7 +245,8 @@ export function applyVariant(state: AppState, id: string): AppState {
   if (!variant) throw new Error('Nieaktualny wariant. Odśwież panel.');
   if (variant.id === 'keep') return { ...state, revision: state.revision + 1, lastDecision: `Zachowano plan o ${formatTime(state.now)}` };
   const bays = state.bays.map(bay => bay.id === variant.bayId ? { ...bay, slots: overlay(bay.slots, variant.start, variant.end, variant.mode!) } : bay);
-  return { ...state, bays, revision: state.revision + 1, lastDecision: `Zatwierdzono ${variant.reason}` };
+  const decision: PlanDecision = { id: crypto.randomUUID(), bayId: variant.bayId!, mode: variant.mode!, start: variant.start, end: variant.end, approvedAt: new Date().toISOString(), scenarioMinute: state.now };
+  return { ...state, bays, decisions: [...state.decisions, decision], revision: state.revision + 1, lastDecision: `Zatwierdzono ${variant.reason}` };
 }
 
 export function mutate(state: AppState, action: Record<string, unknown>): AppState {
@@ -234,13 +267,29 @@ export function mutate(state: AppState, action: Record<string, unknown>): AppSta
     const end = Number(action.end);
     const status = action.status as CityEvent['status'];
     if (!Number.isInteger(end) || end < state.now || end > 1320 || !['planned', 'cancelled'].includes(status)) throw new Error('Nieprawidłowe dane wydarzenia.');
-    return { ...state, event: { ...state.event, end, status, nearby: action.nearby === true }, revision: state.revision + 1 };
+    return { ...state, event: { ...state.event, end, status, nearby: action.nearby === true, updatedAt: new Date().toISOString() }, revision: state.revision + 1 };
   }
   if (action.type === 'bay') {
     const bayId = String(action.bayId);
-    if (!state.bays.some(b => b.id === bayId)) throw new Error('Nieznana zatoka.');
-    const bays = state.bays.map(bay => bay.id === bayId ? { ...bay, closed: action.closed === true, occupancy: action.occupancy === 'reported_occupied' ? 'reported_occupied' as const : 'unknown' as const, occupancyAt: action.occupancy === 'reported_occupied' ? state.now : null } : bay);
-    return { ...state, bays, revision: state.revision + 1 };
+    const current = state.bays.find(b => b.id === bayId);
+    if (!current) throw new Error('Nieznana zatoka.');
+    const previous = occupancyStatus(current, state.now);
+    const desired = action.occupancy === 'reported_occupied' ? 'reported_occupied' as const : 'unknown' as const;
+    const bays = state.bays.map(bay => bay.id === bayId ? { ...bay, closed: action.closed === true, occupancy: desired, occupancyAt: desired === 'reported_occupied' ? previous === 'reported_occupied' ? bay.occupancyAt : state.now : null } : bay);
+    const observation: Observation[] = desired !== previous ? [{ id: crypto.randomUUID(), bayId, kind: desired === 'reported_occupied' ? 'occupied' : 'departed', source: 'operator_demo', scenarioMinute: state.now, recordedAt: new Date().toISOString() }] : [];
+    return { ...state, bays, observations: [...state.observations, ...observation], revision: state.revision + 1 };
+  }
+  if (action.type === 'observation') {
+    const bayId = String(action.bayId);
+    const kind = action.kind as Observation['kind'];
+    if (!state.bays.some(bay => bay.id === bayId) || !['arrived', 'departed', 'occupied'].includes(kind)) throw new Error('Nieprawidłowe zgłoszenie zajętości.');
+    if (kind !== 'departed') {
+      const arrival = Number(action.arrival);
+      if (!Number.isInteger(arrival) || Math.abs(arrival - state.now) > 15) throw new Error('Zajętość zgłoś w ciągu 15 minut od przyjazdu.');
+    }
+    const observation: Observation = { id: crypto.randomUUID(), bayId, kind, source: 'user', scenarioMinute: state.now, recordedAt: new Date().toISOString() };
+    const bays = state.bays.map(bay => bay.id === bayId ? { ...bay, occupancy: kind === 'departed' ? 'unknown' as const : 'reported_occupied' as const, occupancyAt: kind === 'departed' ? null : state.now } : bay);
+    return { ...state, bays, observations: [...state.observations, observation], revision: state.revision + 1 };
   }
   if (action.type === 'advance') {
     const now = Number(action.now);

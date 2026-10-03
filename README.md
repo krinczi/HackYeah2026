@@ -20,11 +20,14 @@ Otwórz `http://localhost:3000`. Inne urządzenie w tej samej sieci może otworz
 - Wydarzenie demonstracyjne jako sygnał prognozy; samo nie wystarcza do rekomendacji odbioru.
 - Akceptacja przyszłego planu i odświeżenie widoków na drugim urządzeniu przez odpytywanie co 1,5 s.
 - Zamknięcie zatoki, świeże zgłoszenie zajęcia, przesunięcie czasu scenariusza i reset.
+- Użytkownik może zgłosić przyjazd, zastane zajęcie i odjazd blisko godziny przyjazdu. Zgłoszenia mają źródło i godzinę scenariusza, wygasają po 15 minutach; odjazd nie oznacza potwierdzonego wolnego miejsca.
+- Panel miasta zapisuje historię zatwierdzonych przyszłych okien, pokazuje pochodzenie sygnału wydarzenia i proponowany rytm przeglądu harmonogramu.
 
 ## Granice obecnego rdzenia
 
 - **Brak wytrenowanego AI.** Obecna prognoza jest jawnie demonstracyjną regułą; potrzebny jest zbiór obserwacji postoju do uczenia i oceny modelu.
 - Brak połączenia z czujnikami, parkomatami, znakami drogowymi i miejskim API. Nie ma też rezerwacji miejsc.
+- Zgłoszenia zajętości w demo są deklaracjami użytkownika lub operatora, nie pomiarami fizycznymi. Rytm tygodniowego przeglądu w pilotażu jest propozycją produktu, nie automatyczną zmianą prawa ani faktem o Warszawie.
 - Dane utrwala lokalny plik. Do publicznego wdrożenia z wieloma instancjami potrzebna będzie współdzielona baza (planowane Supabase), autoryzacja operatora i osobne sesje jury.
 - Przybliżone odległości są częścią scenariusza, nie pomiarem tras pieszych.
 
