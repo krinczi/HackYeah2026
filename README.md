@@ -22,6 +22,7 @@ Otwórz `http://localhost:3000`. Inne urządzenie w tej samej sieci może otworz
 - Zamknięcie zatoki, świeże zgłoszenie zajęcia, przesunięcie czasu scenariusza i reset.
 - Użytkownik może zgłosić przyjazd, zastane zajęcie i odjazd blisko godziny przyjazdu. Zgłoszenia mają źródło i godzinę scenariusza, wygasają po 15 minutach; odjazd nie oznacza potwierdzonego wolnego miejsca.
 - Panel miasta zapisuje historię zatwierdzonych przyszłych okien, pokazuje pochodzenie sygnału wydarzenia i proponowany rytm przeglądu harmonogramu.
+- Przycisk `Uruchom przykład` przygotowuje powtarzalny konflikt dostaw i otwiera panel miasta do pokazu dla jury.
 
 ## Granice obecnego rdzenia
 

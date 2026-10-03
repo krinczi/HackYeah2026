@@ -222,6 +222,7 @@ export function analyze(state: AppState): Analysis {
   for (const bay of state.bays) {
     if (bay.closed || recentOccupied(bay, state.now, start)) continue;
     for (const mode of MODES) {
+      if (mode === 'delivery' && !bay.van) continue;
       if (modeAt(bay, start) === mode) continue;
       variants.push(makeVariant(state, start, end, bay.id, mode));
     }
@@ -251,6 +252,11 @@ export function applyVariant(state: AppState, id: string): AppState {
 
 export function mutate(state: AppState, action: Record<string, unknown>): AppState {
   if (action.type === 'reset') return initialState();
+  if (action.type === 'demo') {
+    const seed = initialState();
+    const extra: StopRequest = { id: 'demo-d2', mode: 'delivery', destination: 'shops', arrival: 690, duration: 15, vehicle: 'van', source: 'demo_seed', createdAt: 'scenariusz' };
+    return { ...seed, requests: [...seed.requests, extra], revision: state.revision + 1 };
+  }
   if (action.type === 'request') {
     const mode = action.mode as Mode;
     const destination = action.destination as Destination;

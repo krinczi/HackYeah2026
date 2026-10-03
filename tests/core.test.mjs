@@ -77,3 +77,11 @@ test('operator może wycofać zgłoszenie bez ogłaszania miejsca wolnym', () =>
   assert.equal(state.observations.at(-1).kind, 'departed');
   assert.match(occupancyEvidence(state, state.bays[0]), /niepotwierdzone/);
 });
+
+test('jedno kliknięcie przygotowuje powtarzalny scenariusz dla jury', () => {
+  const state = mutate(initialState(), { type: 'demo' });
+  assert.equal(state.requests.length, 5);
+  assert.equal(analyze(state).recommendedId, 'A-delivery');
+  assert.equal(state.observations.length, 0);
+  assert.equal(analyze(state).variants.some(variant => variant.id === 'C-delivery'), false);
+});

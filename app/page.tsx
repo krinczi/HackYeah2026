@@ -92,7 +92,7 @@ export default function Home() {
     </header>
 
     <section className="intro">
-      <div><p className="eyebrow">MIEJSCE ZMIENIA FUNKCJĘ. ZASADA JEST JASNA.</p><h1>Jedna zatoka.<br/><em>Różne potrzeby.</em></h1><p className="lede">Sprawdź, gdzie wolno Ci się zatrzymać. Zobacz, jak miasto może dostosować przyszłe godziny do rzeczywistego popytu.</p></div>
+      <div><p className="eyebrow">MIEJSCE ZMIENIA FUNKCJĘ. ZASADA JEST JASNA.</p><h1>Jedna zatoka.<br/><em>Różne potrzeby.</em></h1><p className="lede">Sprawdź, gdzie wolno Ci się zatrzymać. Zobacz, jak miasto może dostosować przyszłe godziny do rzeczywistego popytu.</p><button className="demo-launch" disabled={busy} onClick={async () => { if (await act({ type: 'demo' }, 'Scenariusz gotowy: dwie dostawy potrzebują miejsca w przyszłym oknie.')) { setSubmitted(null); setActiveBayId(null); setTab('city'); } }}>Uruchom przykład <span>↗</span></button></div>
       <div className="intro-sign"><span>TERAZ · {formatTime(state.now)}</span><strong>{MODE_LABEL[modeAt(state.bays[0], state.now) ?? 'parking'].toUpperCase()}</strong><small>Zatoka A · {occupancyStatus(state.bays[0], state.now) === 'unknown' ? 'zajętość nieznana' : 'zgłoszono zajęcie'}</small></div>
     </section>
 
