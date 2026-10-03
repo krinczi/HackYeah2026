@@ -17,7 +17,7 @@ Otwórz `http://localhost:3000`. Inne urządzenie w tej samej sieci może otworz
 
 - Zgłoszenie dostawy, parkingu lub odbioru; filtr czasu, długości postoju, gabarytu i zamknięcia zatoki.
 - Mapa OpenStreetMap obok listy wyników pokazuje trzy punkty scenariusza na rzeczywistej ulicy. Przycisk punktu startowego pyta o zgodę w aplikacji i ustawia **symulowaną pozycję na tym odcinku**; nie pobiera GPS.
-- Pasek pokazu przełącza trzy odtwarzalne sytuacje: koniec postoju i zgłoszenie zajęcia, konflikt dwóch dostaw z parkingiem oraz odbiory po wydarzeniu. Sceny zapisują demonstracyjne dane w tym samym lokalnym stanie, więc panel miasta, kierowca i makieta znaku reagują na siebie.
+- Jeden przycisk `Pokaż demo ulicy` otwiera prowadzony pokaz trzech sytuacji: koniec postoju i zgłoszenie zajęcia, konflikt dwóch dostaw z parkingiem oraz odbiory po wydarzeniu. Jeden przycisk `Dalej` prowadzi do kolejnej sytuacji, a zakończenie przywraca czysty scenariusz. Sceny zapisują demonstracyjne dane w tym samym lokalnym stanie, więc panel miasta, kierowca i makieta znaku reagują na siebie.
 - Brak obietnicy wolnego miejsca: przy braku pomiaru zajętość to `nieznana`.
 - Po potwierdzonym przyjeździe aplikacja zapisuje deklarowany czas postoju. Do jego końca zatoka jest traktowana jako prawdopodobnie zajęta, a przez kolejne 15 minut może pojawić się sygnał `może być wolne` z niską pewnością. Świeższe zgłoszenie zajęcia go zastępuje; samo wyszukanie nie wystarcza do oszacowania konkretnej zatoki.
 - Zapis niezaspokojonego popytu i odrzucanie zduplikowanych zgłoszeń.
@@ -27,7 +27,7 @@ Otwórz `http://localhost:3000`. Inne urządzenie w tej samej sieci może otworz
 - Zamknięcie zatoki, świeże zgłoszenie zajęcia, przesunięcie czasu scenariusza i reset.
 - Użytkownik może zgłosić przyjazd, zastane zajęcie i odjazd blisko godziny przyjazdu. Zgłoszenia mają źródło i godzinę scenariusza, wygasają po 15 minutach; odjazd nie oznacza potwierdzonego wolnego miejsca.
 - Panel miasta zapisuje historię zatwierdzonych przyszłych okien, pokazuje pochodzenie sygnału wydarzenia i proponowany rytm przeglądu harmonogramu.
-- Sceny można uruchamiać wielokrotnie z dowolnego widoku, aby jury mogło porównać przypadki bez ręcznego resetu.
+- Pokaz można rozpocząć ponownie z pierwszego ekranu bez ręcznego resetu.
 
 ## Granice obecnego rdzenia
 

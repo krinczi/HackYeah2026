@@ -49,6 +49,7 @@ export default function Home() {
   const [driverStep, setDriverStep] = useState<DriverStep>('intent');
   const [input, setInput] = useState<SearchInput>({ mode: 'delivery', destination: 'shops', arrival: 600, duration: 15, vehicle: 'van' });
   const [submitted, setSubmitted] = useState<SearchInput | null>(null);
+  const [demoScene, setDemoScene] = useState<DemoScene | null>(null);
   const [activeBayId, setActiveBayId] = useState<string | null>(null);
   const [activeStopEnd, setActiveStopEnd] = useState<number | null>(null);
   const [selectedBayId, setSelectedBayId] = useState<string | null>(null);
@@ -96,6 +97,7 @@ export default function Home() {
   async function openScene(scene: DemoScene) {
     const result = await act({ type: 'scene', scene }, '');
     if (!result) return;
+    setDemoScene(scene);
     setActiveBayId(null);
     setActiveStopEnd(null);
     setSelectedBayId(null);
@@ -110,7 +112,19 @@ export default function Home() {
       setDriverStep('intent');
       setTab('city');
     }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
+
+  async function finishDemo() {
+    if (!await act({ type: 'reset' }, '')) return;
+    setDemoScene(null);
+    setSubmitted(null);
+    setDriverStep('intent');
+    setTab('driver');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  const demoIndex = demoScene ? SCENES.findIndex(scene => scene.id === demoScene) : -1;
 
   if (!state || !analysis) return <main className="loading">Ładowanie ulicy…</main>;
 
@@ -125,16 +139,12 @@ export default function Home() {
       <button className={tab !== 'driver' ? 'active' : ''} onClick={() => setTab('city')}>Dla miasta</button>
     </nav>
     {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice('')} aria-label="Zamknij komunikat">×</button></div>}
-    <section className="demo-rail" aria-label="Scenariusze demonstracyjne">
-      <div className="demo-rail-intro"><span>WARSZAWA / ŚWIĘTOKRZYSKA</span><strong>Jedna ulica. Trzy historie.</strong><small>Marszałkowska – pl. Powstańców · <a href="https://zdm.waw.pl/wp-content/uploads/2018/04/Raport_koncowy_Swietokrzyska_dostawy.pdf" target="_blank" rel="noopener noreferrer">badanie ZDM 2018</a></small></div>
-      <div className="demo-rail-options">{SCENES.map((scene, index) => <button key={scene.id} type="button" className={state.scene === scene.id ? 'is-active' : ''} disabled={busy} onClick={() => void openScene(scene.id)}><span>0{index + 1}</span><b>{scene.title}</b></button>)}</div>
-      {state.scene && <p className="demo-rail-note">{SCENES.find(scene => scene.id === state.scene)?.note} Punkty A–C i ich zasady są modelem, nie aktualnym oznakowaniem.</p>}
-    </section>
+    {demoScene && <section className="demo-tour" aria-label="Pokaz aplikacji"><div><span>DEMO {demoIndex + 1}/3 · ŚWIĘTOKRZYSKA</span><p>{SCENES[demoIndex].note} <a href="https://zdm.waw.pl/wp-content/uploads/2018/04/Raport_koncowy_Swietokrzyska_dostawy.pdf" target="_blank" rel="noopener noreferrer">Badanie ZDM 2018</a></p></div><button className="demo-tour-next" type="button" disabled={busy} onClick={() => demoIndex === SCENES.length - 1 ? void finishDemo() : void openScene(SCENES[demoIndex + 1].id)}>{demoIndex === SCENES.length - 1 ? 'Zakończ demo' : `Dalej: ${SCENES[demoIndex + 1].title}`}</button><button className="demo-tour-close" type="button" disabled={busy} onClick={() => void finishDemo()} aria-label="Zamknij demo">×</button></section>}
 
     {tab === 'driver' && <>
-      {driverStep === 'intent' && <section className="intro simple-intro"><p className="eyebrow">JEDNA ZATOKA. RÓŻNE POTRZEBY.</p><h1>Gdzie chcesz<br/><em>się zatrzymać?</em></h1><p className="lede">Wybierz powód postoju. W następnym kroku podasz godzinę i zobaczysz, co wolno.</p></section>}
+      {driverStep === 'intent' && <section className="intro simple-intro"><p className="eyebrow">JEDNA ZATOKA. RÓŻNE POTRZEBY.</p><h1>Gdzie chcesz<br/><em>się zatrzymać?</em></h1><p className="lede">Wybierz powód postoju. W następnym kroku podasz godzinę i zobaczysz, co wolno.</p><button className="demo-entry" type="button" disabled={busy} onClick={() => void openScene('parking')}>Pokaż demo ulicy <span aria-hidden="true">→</span></button></section>}
       {driverStep === 'intent' && <section className="intent-entry"><div className="section-heading"><span>KROK 1 Z 2</span><h2>Po co przyjeżdżasz?</h2></div><div className="intent-grid">
-        {(['delivery', 'parking', 'pickup'] as Mode[]).map((mode, index) => <button key={mode} className={`intent-card ${mode}`} onClick={() => { setInput({ ...input, mode, arrival: Math.max(input.arrival, state.now), duration: mode === 'pickup' ? 10 : mode === 'delivery' ? 15 : 30, vehicle: mode === 'delivery' ? 'van' : 'car' }); setSubmitted(null); setSelectedBayId(null); setDriverStep('details'); }}><span>0{index + 1} / {MODE_LABEL[mode].toUpperCase()}</span><strong>{mode === 'delivery' ? 'Dostarczam towar' : mode === 'parking' ? 'Chcę zaparkować' : 'Odbieram kogoś'}</strong><small>{mode === 'delivery' ? 'Krótki rozładunek blisko celu' : mode === 'parking' ? 'Postój na określony czas' : 'Szybkie zatrzymanie przy ulicy'}</small></button>)}
+        {(['delivery', 'parking', 'pickup'] as Mode[]).map((mode, index) => <button key={mode} className={`intent-card ${mode}`} onClick={() => { setDemoScene(null); setInput({ ...input, mode, arrival: Math.max(input.arrival, state.now), duration: mode === 'pickup' ? 10 : mode === 'delivery' ? 15 : 30, vehicle: mode === 'delivery' ? 'van' : 'car' }); setSubmitted(null); setSelectedBayId(null); setDriverStep('details'); }}><span>0{index + 1} / {MODE_LABEL[mode].toUpperCase()}</span><strong>{mode === 'delivery' ? 'Dostarczam towar' : mode === 'parking' ? 'Chcę zaparkować' : 'Odbieram kogoś'}</strong><small>{mode === 'delivery' ? 'Krótki rozładunek blisko celu' : mode === 'parking' ? 'Postój na określony czas' : 'Szybkie zatrzymanie przy ulicy'}</small></button>)}
       </div><p className="intent-note">Pokazujemy, czy postój jest dozwolony. Wolne miejsce potwierdzimy tylko wtedy, gdy będziemy mieć pomiar.</p></section>}
       {driverStep !== 'intent' && <div className={`driver-layout focused ${driverStep === 'details' ? 'form-step' : 'result-step'}`}>
       {driverStep === 'details' && <section className="form-panel"><div className="section-heading"><span>KROK 2 Z 2 · {MODE_LABEL[input.mode].toUpperCase()}</span><h2>Kiedy i gdzie?</h2></div><button className="back-link" onClick={() => setDriverStep('intent')}>Zmień cel postoju</button>
