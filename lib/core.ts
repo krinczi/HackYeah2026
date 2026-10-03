@@ -265,7 +265,7 @@ export function mutate(state: AppState, action: Record<string, unknown>): AppSta
     const vehicle = action.vehicle as Vehicle;
     if (!MODES.includes(mode) || !Object.keys(DEST_LABEL).includes(destination) || !['car', 'van'].includes(vehicle) || !Number.isInteger(arrival) || !Number.isInteger(duration) || arrival < state.now || arrival > 1300 || duration < 5 || duration > MAX_DURATION[mode] || arrival + duration > 1320) throw new Error('Sprawdź godzinę, czas i rodzaj postoju.');
     const repeated = state.requests.some(r => r.source === 'user' && r.mode === mode && r.destination === destination && Math.abs(r.arrival - arrival) < 10 && Math.abs(r.duration - duration) < 10 && r.vehicle === vehicle);
-    if (repeated) throw new Error('Podobne zgłoszenie jest już zapisane w tym scenariuszu.');
+    if (repeated) return state;
     const request: StopRequest = { id: crypto.randomUUID(), mode, destination, arrival, duration, vehicle, source: 'user', createdAt: new Date().toISOString() };
     return { ...state, requests: [...state.requests, request], revision: state.revision + 1 };
   }

@@ -2,6 +2,8 @@
 
 Responsywna aplikacja Next.js: widok użytkownika, panel miasta i cyfrowy podgląd zatoki. Scenariusz obejmuje trzy **modelowe** zatoki, a nie zweryfikowane aktualne oznakowanie w Warszawie.
 
+Pierwszy ekran prowadzi przez trzy proste kroki: wybór celu postoju → godzina i miejsce → wynik. Panel miasta jest osobnym widokiem; porównania i scenariusze są rozwijane dopiero na żądanie.
+
 ## Uruchomienie
 
 ```powershell

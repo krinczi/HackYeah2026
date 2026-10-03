@@ -42,10 +42,12 @@ test('zamknięcie i świeże zgłoszenie zajęcia blokują wskazanie miejsca', (
   assert.equal(occupancyStatus(state.bays[0], state.now), 'unknown');
 });
 
-test('identyczne zgłoszenie nie zawyża sztucznie popytu', () => {
+test('ponowne wyszukanie pokazuje wynik bez zawyżania popytu', () => {
   const action = { type: 'request', mode: 'delivery', destination: 'shops', arrival: 690, duration: 15, vehicle: 'van' };
   const state = mutate(initialState(), action);
-  assert.throws(() => mutate(state, action), /Podobne zgłoszenie/);
+  const again = mutate(state, action);
+  assert.equal(again.requests.length, state.requests.length);
+  assert.equal(again.revision, state.revision);
 });
 
 test('przyjazd blokuje wskazanie, odjazd nie udaje pomiaru wolnego miejsca', () => {
