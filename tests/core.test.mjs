@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyze, applyVariant, initialState, modeAt, mutate, occupancyEvidence, occupancyStatus, rankBays } from '../lib/core.ts';
+import { analyze, applyVariant, availabilityHint, initialState, modeAt, mutate, occupancyEvidence, occupancyStatus, rankBays } from '../lib/core.ts';
 
 test('pojedyncza potrzeba nie przełącza planu; kolejna zmienia rekomendację na przyszłość', () => {
   let state = initialState();
@@ -66,6 +66,33 @@ test('stare zgłoszenie zajęcia traci ważność i nie jest prezentowane jako p
   state = mutate(state, { type: 'advance', now: 630 });
   assert.equal(occupancyStatus(state.bays[0], state.now), 'unknown');
   assert.match(occupancyEvidence(state, state.bays[0]), /nieaktualne/);
+});
+
+test('potwierdzony przyjazd daje krótką, niepewną wskazówkę po deklarowanym końcu', () => {
+  let state = mutate(initialState(), { type: 'advance', now: 660 });
+  state = mutate(state, { type: 'request', mode: 'parking', destination: 'food', arrival: 660, duration: 30, vehicle: 'car' });
+  assert.equal(availabilityHint(state, state.bays[1], 690), null);
+  state = mutate(state, { type: 'observation', bayId: 'B', kind: 'arrived', arrival: 660, duration: 30, mode: 'parking' });
+  assert.equal(state.observations.at(-1).expectedEnd, 690);
+  state = mutate(state, { type: 'advance', now: 680 });
+  assert.equal(occupancyStatus(state.bays[1], state.now), 'unknown');
+  assert.equal(availabilityHint(state, state.bays[1], 680)?.kind, 'expected_occupied');
+  assert.equal(rankBays(state, { mode: 'parking', destination: 'food', arrival: 680, duration: 10, vehicle: 'car' }).some(match => match.bay.id === 'B'), false);
+  assert.equal(availabilityHint(state, state.bays[1], 690)?.kind, 'possible_free');
+  assert.equal(rankBays(state, { mode: 'parking', destination: 'food', arrival: 690, duration: 10, vehicle: 'car' }).some(match => match.bay.id === 'B'), true);
+  state = mutate(state, { type: 'advance', now: 706 });
+  assert.equal(availabilityHint(state, state.bays[1], 706), null);
+});
+
+test('odjazd daje świeżą wskazówkę, a nowsze zajęcie ją usuwa', () => {
+  let state = mutate(initialState(), { type: 'advance', now: 660 });
+  state = mutate(state, { type: 'observation', bayId: 'B', kind: 'arrived', arrival: 660, duration: 30, mode: 'parking' });
+  state = mutate(state, { type: 'advance', now: 665 });
+  state = mutate(state, { type: 'observation', bayId: 'B', kind: 'departed' });
+  assert.equal(availabilityHint(state, state.bays[1], 665)?.kind, 'possible_free');
+  state = mutate(state, { type: 'observation', bayId: 'B', kind: 'occupied', arrival: 665 });
+  assert.equal(availabilityHint(state, state.bays[1], 665), null);
+  assert.equal(rankBays(state, { mode: 'parking', destination: 'food', arrival: 665, duration: 10, vehicle: 'car' }).some(match => match.bay.id === 'B'), false);
 });
 
 test('przyszłego przyjazdu nie można zgłosić jako zajęcia teraz', () => {

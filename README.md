@@ -18,6 +18,7 @@ Otwórz `http://localhost:3000`. Inne urządzenie w tej samej sieci może otworz
 - Zgłoszenie dostawy, parkingu lub odbioru; filtr czasu, długości postoju, gabarytu i zamknięcia zatoki.
 - Mapa OpenStreetMap obok listy wyników pokazuje trzy punkty scenariusza. Po kliknięciu można dodać przybliżoną lokalizację użytkownika; aplikacja nie zapisuje jej na serwerze.
 - Brak obietnicy wolnego miejsca: przy braku pomiaru zajętość to `nieznana`.
+- Po potwierdzonym przyjeździe aplikacja zapisuje deklarowany czas postoju. Do jego końca zatoka jest traktowana jako prawdopodobnie zajęta, a przez kolejne 15 minut może pojawić się sygnał `może być wolne` z niską pewnością. Świeższe zgłoszenie zajęcia go zastępuje; samo wyszukanie nie wystarcza do oszacowania konkretnej zatoki.
 - Zapis niezaspokojonego popytu i odrzucanie zduplikowanych zgłoszeń.
 - Symulacja wariantu bez zmian i przyszłych zmian funkcji; wynik uwzględnia obsłużone i nieobsłużone zgłoszenia oraz koszt zmiany.
 - Wydarzenie demonstracyjne jako sygnał prognozy; samo nie wystarcza do rekomendacji odbioru.

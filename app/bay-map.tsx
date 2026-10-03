@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type * as Leaflet from 'leaflet';
-import { modeAt, type Bay, type Match } from '@/lib/core';
+import { availabilityHint, modeAt, type AppState, type Bay, type Match } from '@/lib/core';
 
 type Point = [number, number];
 type Props = {
-  bays: Bay[];
+  state: AppState;
   matches: Match[];
   arrival: number;
   selectedBayId: string | null;
@@ -21,15 +21,15 @@ const DEMO_POINTS: Record<string, Point> = {
   C: [52.23561, 21.00945],
 };
 
-function bayIcon(L: typeof Leaflet, bay: Bay, eligible: boolean, selected: boolean, arrival: number) {
+function bayIcon(L: typeof Leaflet, bay: Bay, eligible: boolean, selected: boolean, possibleFree: boolean, arrival: number) {
   const marker = document.createElement('span');
   const mode = modeAt(bay, arrival);
-  marker.className = `map-bay-pin ${mode ?? 'unknown'} ${eligible ? 'is-match' : 'is-unavailable'} ${selected ? 'is-selected' : ''}`;
+  marker.className = `map-bay-pin ${mode ?? 'unknown'} ${eligible ? 'is-match' : 'is-unavailable'} ${selected ? 'is-selected' : ''} ${possibleFree ? 'is-possible-free' : ''}`;
   marker.textContent = bay.id;
   return L.divIcon({ className: 'map-pin-wrapper', html: marker, iconSize: [44, 50], iconAnchor: [22, 49], popupAnchor: [0, -44] });
 }
 
-export default function BayMap({ bays, matches, arrival, selectedBayId, onSelectBay }: Props) {
+export default function BayMap({ state, matches, arrival, selectedBayId, onSelectBay }: Props) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Leaflet.Map | null>(null);
   const leafletRef = useRef<typeof Leaflet | null>(null);
@@ -70,12 +70,13 @@ export default function BayMap({ bays, matches, arrival, selectedBayId, onSelect
     const map = mapRef.current;
     if (!ready || !L || !map) return;
     const layer = L.layerGroup().addTo(map);
-    for (const bay of bays) {
+    for (const bay of state.bays) {
       const point = DEMO_POINTS[bay.id];
       if (!point) continue;
       const eligible = matches.some(match => match.bay.id === bay.id);
+      const hint = availabilityHint(state, bay, arrival);
       const marker = L.marker(point, {
-        icon: bayIcon(L, bay, eligible, selectedBayId === bay.id, arrival),
+        icon: bayIcon(L, bay, eligible, selectedBayId === bay.id, eligible && hint?.kind === 'possible_free', arrival),
         title: `${bay.name}: ${eligible ? 'pasuje do postoju' : 'nie pasuje do wybranego postoju'}`,
         zIndexOffset: selectedBayId === bay.id ? 1000 : 0,
       }).addTo(layer);
@@ -83,9 +84,9 @@ export default function BayMap({ bays, matches, arrival, selectedBayId, onSelect
       const title = document.createElement('strong');
       title.textContent = bay.name;
       const status = document.createElement('span');
-      status.textContent = eligible ? 'Pasuje do wybranego postoju' : 'Nie pasuje do wybranych warunków';
+      status.textContent = eligible && hint?.kind === 'possible_free' ? 'Może być wolne' : hint?.kind === 'expected_occupied' ? 'Przewidywany postój' : eligible ? 'Pasuje do wybranego postoju' : 'Nie pasuje do wybranych warunków';
       const note = document.createElement('small');
-      note.textContent = 'Punkt modelowy · dokładne położenie niepotwierdzone';
+      note.textContent = eligible && hint?.kind === 'possible_free' || hint?.kind === 'expected_occupied' ? hint.detail : 'Punkt modelowy · dokładne położenie niepotwierdzone';
       popup.className = 'bay-map-popup';
       popup.append(title, status, note);
       marker.bindPopup(popup);
@@ -93,7 +94,7 @@ export default function BayMap({ bays, matches, arrival, selectedBayId, onSelect
       if (selectedBayId === bay.id) marker.openPopup();
     }
     return () => { layer.remove(); };
-  }, [ready, bays, matches, arrival, selectedBayId, onSelectBay]);
+  }, [ready, state, matches, arrival, selectedBayId, onSelectBay]);
 
   useEffect(() => {
     const L = leafletRef.current;
@@ -141,10 +142,10 @@ export default function BayMap({ bays, matches, arrival, selectedBayId, onSelect
   }
 
   return <section className="bay-map-card" id="mapa-zatok" aria-label="Mapa zatok">
-    <div className="bay-map-heading"><div><span>WARSZAWA / SCENARIUSZ</span><h3>Zatoki na mapie</h3></div><span className="bay-map-count">{matches.length} / {bays.length} pasuje</span></div>
+    <div className="bay-map-heading"><div><span>WARSZAWA / SCENARIUSZ</span><h3>Zatoki na mapie</h3></div><span className="bay-map-count">{matches.length} / {state.bays.length} pasuje</span></div>
     <div className="bay-map-actions"><button type="button" onClick={findMe} disabled={locating}>{locating ? 'Ustalam lokalizację…' : location ? 'Odśwież moją lokalizację' : 'Pokaż moją lokalizację'}</button>{location && <button type="button" onClick={focusBays}>Wróć do zatok</button>}</div>
     <div className="bay-map-stage"><div ref={canvasRef} className="bay-map-canvas" aria-label="Mapa OpenStreetMap z modelowymi zatokami A, B i C" />{!ready && !mapError && <div className="bay-map-loading">Ładowanie mapy…</div>}{mapError && <div className="bay-map-loading">Mapa jest chwilowo niedostępna. Lista zatok nadal działa.</div>}</div>
-    <div className="bay-map-legend"><span><i className="legend-delivery" />Dostawa</span><span><i className="legend-parking" />Parking</span><span><i className="legend-pickup" />Odbiór</span><span><i className="legend-unavailable" />Nie pasuje</span>{location && <span><i className="legend-user" />Twoja pozycja</span>}</div>
+    <div className="bay-map-legend"><span><i className="legend-delivery" />Dostawa</span><span><i className="legend-parking" />Parking</span><span><i className="legend-pickup" />Odbiór</span><span><i className="legend-unavailable" />Nie pasuje</span>{matches.some(match => availabilityHint(state, match.bay, arrival)?.kind === 'possible_free') && <span><i className="legend-possible" />Może być wolne</span>}{location && <span><i className="legend-user" />Twoja pozycja</span>}</div>
     {locationMessage && <p className="bay-map-message" role="status">{locationMessage}</p>}
     {location && accuracy && <p className="bay-map-message">Pozycja przybliżona · dokładność GPS około {Math.round(accuracy)} m.</p>}
     {tilesError && <p className="bay-map-message">Podkład OpenStreetMap jest niedostępny; znaczniki pozostają orientacyjne.</p>}

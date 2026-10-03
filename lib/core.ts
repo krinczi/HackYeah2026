@@ -36,6 +36,7 @@ export type Observation = {
   kind: 'arrived' | 'departed' | 'occupied';
   source: 'user' | 'operator_demo';
   scenarioMinute: number;
+  expectedEnd?: number;
   recordedAt: string;
 };
 export type PlanDecision = {
@@ -126,8 +127,29 @@ export function validThroughout(bay: Bay, mode: Mode, start: number, duration: n
   return false;
 }
 
-function recentOccupied(bay: Bay, now: number, arrival: number): boolean {
-  return occupancyStatus(bay, now) === 'reported_occupied' && arrival <= now + 15;
+export type AvailabilityHint = { kind: 'expected_occupied' | 'possible_free'; label: string; detail: string };
+
+export function availabilityHint(state: AppState, bay: Bay, at: number): AvailabilityHint | null {
+  if (bay.closed) return null;
+  const latest = [...state.observations].reverse().find(item => item.bayId === bay.id && item.scenarioMinute <= at);
+  if (!latest) return null;
+  if (latest.kind === 'departed' && latest.source === 'user' && at - latest.scenarioMinute <= 15) {
+    return { kind: 'possible_free', label: 'Może być wolne', detail: `Odjazd zgłoszony o ${formatTime(latest.scenarioMinute)} · niska pewność, miejsce mogło zostać zajęte ponownie.` };
+  }
+  if (latest.kind !== 'arrived' || latest.expectedEnd === undefined) return null;
+  if (at < latest.expectedEnd) {
+    return { kind: 'expected_occupied', label: 'Przewidywany postój', detail: `Przyjazd zgłoszony o ${formatTime(latest.scenarioMinute)} · deklarowany koniec postoju ${formatTime(latest.expectedEnd)}.` };
+  }
+  if (at <= latest.expectedEnd + 15) {
+    return { kind: 'possible_free', label: 'Może być wolne', detail: `Deklarowany postój skończył się o ${formatTime(latest.expectedEnd)} · brak potwierdzenia odjazdu, niska pewność.` };
+  }
+  return null;
+}
+
+function recentOccupied(state: AppState, bay: Bay, arrival: number): boolean {
+  const hint = availabilityHint(state, bay, arrival);
+  if (hint) return hint.kind === 'expected_occupied';
+  return occupancyStatus(bay, state.now) === 'reported_occupied' && arrival <= state.now + 15;
 }
 
 export function occupancyStatus(bay: Bay, now: number): Bay['occupancy'] {
@@ -147,7 +169,7 @@ export function occupancyEvidence(state: AppState, bay: Bay): string {
 export function rankBays(state: AppState, input: Pick<StopRequest, 'mode' | 'destination' | 'arrival' | 'duration' | 'vehicle'>): Match[] {
   return state.bays
     .filter(bay => (input.vehicle !== 'van' || bay.van) && validThroughout(bay, input.mode, input.arrival, input.duration))
-    .filter(bay => !recentOccupied(bay, state.now, input.arrival))
+    .filter(bay => !recentOccupied(state, bay, input.arrival))
     .map(bay => ({ bay, distance: bay.distance[input.destination], occupancy: occupancyStatus(bay, state.now) }))
     .sort((a, b) => a.distance - b.distance)
     .slice(0, 3);
@@ -187,7 +209,7 @@ function simulate(state: AppState, bays: Bay[], start: number, end: number): Out
   return requests.map(request => {
     const possible = bays
       .filter(bay => (request.vehicle !== 'van' || bay.van) && validThroughout(bay, request.mode, request.arrival, request.duration))
-      .filter(bay => !recentOccupied(bay, state.now, request.arrival) && (occupiedUntil.get(bay.id) ?? 0) <= request.arrival)
+      .filter(bay => !recentOccupied(state, bay, request.arrival) && (occupiedUntil.get(bay.id) ?? 0) <= request.arrival)
       .sort((a, b) => a.distance[request.destination] - b.distance[request.destination]);
     const bay = possible[0];
     if (!bay) return { requestId: request.id, mode: request.mode, served: false, forecast: request.id.startsWith('forecast-') };
@@ -220,7 +242,7 @@ export function analyze(state: AppState): Analysis {
   const keep = makeVariant(state, start, end, null, null);
   const variants = [keep];
   for (const bay of state.bays) {
-    if (bay.closed || recentOccupied(bay, state.now, start)) continue;
+    if (bay.closed || recentOccupied(state, bay, start)) continue;
     for (const mode of MODES) {
       if (mode === 'delivery' && !bay.van) continue;
       if (modeAt(bay, start) === mode) continue;
@@ -288,12 +310,20 @@ export function mutate(state: AppState, action: Record<string, unknown>): AppSta
   if (action.type === 'observation') {
     const bayId = String(action.bayId);
     const kind = action.kind as Observation['kind'];
-    if (!state.bays.some(bay => bay.id === bayId) || !['arrived', 'departed', 'occupied'].includes(kind)) throw new Error('Nieprawidłowe zgłoszenie zajętości.');
+    const selectedBay = state.bays.find(bay => bay.id === bayId);
+    if (!selectedBay || !['arrived', 'departed', 'occupied'].includes(kind)) throw new Error('Nieprawidłowe zgłoszenie zajętości.');
+    let expectedEnd: number | undefined;
     if (kind !== 'departed') {
       const arrival = Number(action.arrival);
       if (!Number.isInteger(arrival) || Math.abs(arrival - state.now) > 15) throw new Error('Zajętość zgłoś w ciągu 15 minut od przyjazdu.');
+      if (kind === 'arrived' && action.duration !== undefined) {
+        const duration = Number(action.duration);
+        const mode = action.mode as Mode;
+        if (!MODES.includes(mode) || !Number.isInteger(duration) || !validThroughout(selectedBay, mode, arrival, duration)) throw new Error('Sprawdź czas i funkcję wybranej zatoki.');
+        expectedEnd = arrival + duration;
+      }
     }
-    const observation: Observation = { id: crypto.randomUUID(), bayId, kind, source: 'user', scenarioMinute: state.now, recordedAt: new Date().toISOString() };
+    const observation: Observation = { id: crypto.randomUUID(), bayId, kind, source: 'user', scenarioMinute: state.now, expectedEnd, recordedAt: new Date().toISOString() };
     const bays = state.bays.map(bay => bay.id === bayId ? { ...bay, occupancy: kind === 'departed' ? 'unknown' as const : 'reported_occupied' as const, occupancyAt: kind === 'departed' ? null : state.now } : bay);
     return { ...state, bays, observations: [...state.observations, observation], revision: state.revision + 1 };
   }
