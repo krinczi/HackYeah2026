@@ -179,6 +179,7 @@ export default function Home() {
         {!submitted && !activeBayId && <div className="empty-state"><p>Wybierz godzinę i sprawdź kolejną zatokę.</p></div>}
         {submitted && <>
           <p className="result-lead">{MODE_LABEL[submitted.mode]} · {formatTime(submitted.arrival)} · {submitted.duration} min. Zgodność z <strong>modelem zasad</strong>, bez gwarancji wolnego miejsca.</p>
+          {Math.abs(submitted.arrival - state.now) > 15 && <p className="reporting-note"><strong>Twoja potrzeba jest zapisana.</strong> Przy pasującej zatoce możesz zgłosić przyjazd lub zajęte miejsce, gdy wybierzesz godzinę {formatTime(state.now)} albo do 15 minut później. Dotyczy to dostawy, parkingu i odbioru.</p>}
           <div className="results-columns">
             <BayMap state={state} matches={matches} arrival={submitted.arrival} selectedBayId={selectedBayId} onSelectBay={setSelectedBayId} />
             <div className="result-list-column">
