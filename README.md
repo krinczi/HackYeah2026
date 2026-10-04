@@ -1,44 +1,50 @@
-# TuWolno? — działający rdzeń demo
+# TuWolno? — prototyp SMART CITY
 
-Responsywna aplikacja Next.js: widok użytkownika, panel miasta i cyfrowy podgląd zatoki. Pokaz osadzono na prawdziwym odcinku ul. Świętokrzyskiej między Marszałkowską a pl. Powstańców Warszawy, ale punkty A–C, ich harmonogramy i zgłoszenia są **modelowe**, a nie aktualnym oznakowaniem Warszawy.
-
-Pierwszy ekran prowadzi przez trzy proste kroki: wybór celu postoju → godzina i miejsce → wynik. Panel miasta jest osobnym widokiem; porównania i scenariusze są rozwijane dopiero na żądanie.
+TuWolno? to responsywna aplikacja Next.js z widokiem kierowcy, panelem miasta i makietą cyfrowego oznakowania. Demo pokazuje prawdziwy odcinek ul. Świętokrzyskiej w Warszawie między ul. Marszałkowską a pl. Powstańców Warszawy. Zatoki A–C, ich położenie, odległości, harmonogramy i początkowe zgłoszenia są **modelowe** — nie opisują istniejących miejsc ani aktualnych zasad ruchu.
 
 ## Uruchomienie
 
-```powershell
+Potrzebne są Node.js 20.9 lub nowszy, npm oraz internet do pobrania zależności i wyświetlenia podkładu OpenStreetMap.
+
+```bash
+git clone https://github.com/krinczi/HackYeah2026.git
+cd HackYeah2026
 npm install
 npm run dev
 ```
 
-Otwórz `http://localhost:3000`. Inne urządzenie w tej samej sieci może otworzyć adres IP komputera na porcie 3000. Stan jest współdzielony przez lokalny proces i zapisany w `data/state.json`; przycisk resetu przywraca scenariusz. `npm test` sprawdza mechanizm decyzji, a `npm run build` kompilację.
+Otwórz `http://localhost:3000` lub adres wypisany przez `npm run dev`, jeśli port 3000 jest zajęty. Projekt można też pobrać jako ZIP; polecenia `npm` uruchom w folderze zawierającym `package.json`. Jeśli zapora sieciowa pozwala na połączenia lokalne, inne urządzenie w tej samej sieci może otworzyć adres IP komputera na porcie pokazanym przez `npm run dev`.
+
+Świeży klon zaczyna od godziny scenariusza **10:00**, trzech modelowych zatok i czterech przykładowych zgłoszeń. Zegar scenariusza nie przesuwa się sam wraz z rzeczywistym czasem. Po działaniach w aplikacji stan jest zapisywany lokalnie w `data/state.json` i współdzielony przez osoby korzystające z tej samej uruchomionej instancji. Aby zacząć pokaz ponownie, wybierz **Dla miasta → Zamknięcia zatok → Przywróć początek demo**.
+
+`npm test` uruchamia testy logiki, a `npm run build` sprawdza kompilację aplikacji.
+
+## Krótki scenariusz demo
+
+1. W **Szukam miejsca** wybierz **Dostarczam towar**, cel **Sklepy**, przyjazd **11:30**, postój **15 min** i pojazd **Dostawczy**. Wyszukanie zapisze potrzebę, ale początkowo nie wskaże zatoki dopuszczającej tę dostawę.
+2. Otwórz **Dla miasta**. Panel porówna warianty przyszłego planu i zaproponuje zatokę A dla dostaw w godzinach **11:00–13:00**. Zobacz **Porównaj warianty i skutki**, a następnie kliknij **Zatwierdź plan**.
+3. Wróć do **Szukam miejsca**. Wynik przeliczy się na podstawie zatwierdzonego planu i pokaże zatokę A na liście oraz mapie. To informacja o **dopuszczalnej funkcji**, nie potwierdzenie, że miejsce jest fizycznie wolne.
 
 ## Co działa
 
-- Zgłoszenie dostawy, parkingu lub odbioru; filtr czasu, długości postoju, gabarytu i zamknięcia zatoki.
-- Mapa OpenStreetMap obok listy wyników pokazuje trzy punkty scenariusza na rzeczywistej ulicy. Przycisk punktu startowego pyta o zgodę w aplikacji i ustawia **symulowaną pozycję na tym odcinku**; nie pobiera GPS.
-- Scenariusz można przejść samodzielnie: zgłosić potrzebę postoju, sprawdzić wynik, dodać wydarzenie i zatwierdzić przyszły plan w panelu miasta. Widoki kierowcy i makiety znaku reagują na zmianę wspólnego stanu.
-- Brak obietnicy wolnego miejsca: przy braku pomiaru zajętość to `nieznana`.
-- Po potwierdzonym przyjeździe aplikacja zapisuje deklarowany czas postoju. Do jego końca zatoka jest traktowana jako prawdopodobnie zajęta, a przez kolejne 15 minut może pojawić się sygnał `może być wolne` z niską pewnością. Świeższe zgłoszenie zajęcia go zastępuje; samo wyszukanie nie wystarcza do oszacowania konkretnej zatoki.
-- Zapis niezaspokojonego popytu i odrzucanie zduplikowanych zgłoszeń.
-- Symulacja wariantu bez zmian i przyszłych zmian funkcji; wynik uwzględnia obsłużone i nieobsłużone zgłoszenia oraz koszt zmiany.
-- Wydarzenie demonstracyjne jako sygnał prognozy; samo nie wystarcza do rekomendacji odbioru.
-- Akceptacja przyszłego planu i odświeżenie widoków na drugim urządzeniu przez odpytywanie co 1,5 s.
-- Proste zamknięcie lub przywrócenie zatoki w panelu miasta; ta operacja nie zmienia zgłoszeń zajętości. Przycisk przywrócenia początku demo resetuje stan.
-- Użytkownik może zgłosić przyjazd, zastane zajęcie i odjazd blisko godziny przyjazdu. Zgłoszenia mają źródło i godzinę scenariusza, wygasają po 15 minutach; odjazd nie oznacza potwierdzonego wolnego miejsca.
-- Panel miasta zapisuje historię zatwierdzonych przyszłych okien, pokazuje pochodzenie sygnału wydarzenia i proponowany rytm przeglądu harmonogramu.
-- W panelu miasta można przywrócić początek demonstracji.
+- Kierowca wybiera dostawę, parking lub odbiór osoby, godzinę, cel i czas postoju. Przy dostawie wybiera też typ pojazdu. Wyniki uwzględniają dozwoloną funkcję przez cały zadeklarowany postój, typ pojazdu i zamknięcie zatoki.
+- Mapa OpenStreetMap pokazuje modelowe punkty A–C na rzeczywistym podkładzie ulicy. **Ustaw punkt startowy** dodaje symulowaną pozycję w okolicy po potwierdzeniu w aplikacji; nie pobiera GPS.
+- Wyszukanie zapisuje zgłoszoną potrzebę. Ponowne identyczne wyszukanie nie zwiększa licznika. Symulacja wykrywa także potrzeby, dla których obecny plan nie daje pasującej zatoki.
+- Przy pasującej zatoce użytkownik może zgłosić przyjazd lub zastane zajęcie, jeśli wybrana godzina jest w odległości do 15 minut od godziny scenariusza. Po zgłoszonym przyjeździe może zgłosić odjazd. Dotyczy to dostaw, parkingu i odbiorów.
+- Świeże zgłoszenie zajętości wpływa na wyniki przez 15 minut czasu scenariusza. Po zgłoszeniu przyjazdu zadeklarowany czas postoju pozwala oszacować, kiedy zatoka może się zwolnić. Po deklarowanym końcu lub zgłoszonym odjeździe pojawia się krótkotrwałe **„może być wolne”** z niską pewnością. Samo wyszukanie nie potwierdza zajętości konkretnej zatoki.
+- Miasto porównuje plan bez zmian z możliwymi zmianami funkcji na przyszłe okna. Reguła uwzględnia obsłużone i nieobsłużone zgłoszenia, modelową odległość do celu oraz koszt przełączenia. Operator zatwierdza wybrany wariant; historia decyzji i oś czasu pokazują zatwierdzone zmiany.
+- Operator może ręcznie dodać wydarzenie z początkiem, końcem i punktem na mapie albo je odwołać. Wydarzenie daje demonstracyjny sygnał możliwych odbiorów blisko godziny zakończenia, ale samo nie wystarcza do rekomendacji zmiany.
+- Panel miasta pozwala wyłączyć lub przywrócić zatokę. Makieta oznakowania pokazuje funkcję zatok dla dostępnych godzin podglądu. Otwarte widoki odświeżają wspólny stan demo co około 1,5 sekundy.
 
-## Granice obecnego rdzenia
+## Granice prototypu
 
-- **Brak wytrenowanego AI.** Obecna prognoza jest jawnie demonstracyjną regułą; potrzebny jest zbiór obserwacji postoju do uczenia i oceny modelu.
-- Brak połączenia z czujnikami, parkomatami, znakami drogowymi i miejskim API. Nie ma też rezerwacji miejsc.
-- Zgłoszenia zajętości w demo są deklaracjami użytkownika lub operatora, nie pomiarami fizycznymi. Rytm tygodniowego przeglądu w pilotażu jest propozycją produktu, nie automatyczną zmianą prawa ani faktem o Warszawie.
-- Dane utrwala lokalny plik. Do publicznego wdrożenia z wieloma instancjami potrzebna będzie współdzielona baza (planowane Supabase), autoryzacja operatora i osobne sesje jury.
-- Przybliżone odległości są częścią scenariusza, nie pomiarem tras pieszych.
-- Punkty A–C są orientacyjną wizualizacją modelu na ul. Świętokrzyskiej. Nie wskazują zweryfikowanych zatok ani aktualnego oznakowania; do rzeczywistego wdrożenia potrzebne są współrzędne i zasady potwierdzone przez zarządcę drogi. Podkład mapowy wymaga internetu.
+- **Nie ma wytrenowanego AI ani bieżących danych z miasta.** Rekomendacja i prognoza wydarzenia są jawnymi regułami demonstracyjnymi. Ewentualny model uczony z danych wymagałby zebrania i oceny rzeczywistych obserwacji.
+- Aplikacja nie jest połączona z czujnikami, parkomatami, miejskim API ani rzeczywistymi znakami. Nie rezerwuje miejsc. Zgłoszenia zajętości są deklaracjami użytkownika lub operatora, nie pomiarem fizycznym.
+- Modelowe odległości do sklepów, restauracji i przystanku nie są pomiarem tras pieszych. Wskazane punkty A–C wymagają weryfikacji przez zarządcę drogi przed jakimkolwiek użyciem w rzeczywistym ruchu. Makieta znaku nie jest zatwierdzonym oznakowaniem.
+- Stan jest przechowywany w lokalnym pliku i wspólny dla wszystkich odwiedzających tę instancję; nie ma kont ani autoryzacji operatora. Wdrożenie wieloinstancyjne wymagałoby współdzielonej bazy, a panel miasta — kontroli dostępu. Proponowany w panelu tygodniowy przegląd planu to założenie produktu, nie obowiązująca zasada miasta.
 
-Źródło problemu miejskiego: [badanie ZDM Warszawa z 2018 r.](https://zdm.waw.pl/wp-content/uploads/2018/04/Raport_koncowy_Swietokrzyska_dostawy.pdf). Nie jest ono źródłem bieżącej zajętości.
-## Folder JetBrains
+Źródło opisu problemu: [badanie warszawskiego ZDM z 2018 r.](https://zdm.waw.pl/wp-content/uploads/2018/04/Raport_koncowy_Swietokrzyska_dostawy.pdf). Jest to źródło historyczne, nie dane o bieżącej zajętości.
 
-Ten katalog zawiera działającą aplikację Next.js w `app/` i `lib/` oraz istniejący szkielet Spring Boot w `src/`. Aplikacja webowa działa niezależnie: z terminala w tym katalogu uruchom `npm run dev`. Dokumentacja i brief są w `docs/`.
+## Struktura repozytorium
+
+Aplikacja webowa działa w `app/` i `lib/`. Repozytorium zawiera również szkielet Spring Boot w `src/` oraz materiały projektowe w `docs/`. Uruchomienie aplikacji webowej wymaga poleceń `npm` podanych wyżej.
